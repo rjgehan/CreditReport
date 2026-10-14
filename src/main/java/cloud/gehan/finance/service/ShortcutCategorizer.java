@@ -46,7 +46,9 @@ public class ShortcutCategorizer {
     static final int LOOKBACK_DAYS = 120;
     /** Where an unfiled transaction lands today; these are what the shortcut is for. */
     static final Set<String> LEFTOVERS = Set.of(ReferenceData.UNCATEGORIZED, ReferenceData.OTHER_INCOME, ReferenceData.REFUNDS);
-    private static final Pattern LINE = Pattern.compile("^\\W*(\\d+)\\s*[|:–—-]\\s*(.+?)\\s*$");
+    // The id is the number right before the separator, so "1. 123 | Dining" and
+    // "**123** | Dining" both read as 123; at most 18 digits, so it always fits a long.
+    private static final Pattern LINE = Pattern.compile("(\\d{1,18})\\W*?\\s*[|:–—]\\s*\\**(.+?)\\**\\s*$");
 
     private final TransactionRepository txns;
     private final CategoryRepository categories;
@@ -142,7 +144,9 @@ public class ShortcutCategorizer {
             }
             long id = Long.parseLong(m.group(1));
             Category c = byName.get(normalise(m.group(2)));
-            if (c != null && open.containsKey(id)) {
+            Transaction t = open.get(id);
+            // Money out can only be spending; money in can be income or a refund of spending.
+            if (c != null && t != null && (t.getAmountCents() > 0 || c.getKind() == CategoryKind.EXPENSE)) {
                 picks.put(id, c);
             }
         }
@@ -171,9 +175,15 @@ public class ShortcutCategorizer {
     }
 
     List<Transaction> leftovers() {
-        LocalDate from = LocalDate.now(zone).minusDays(LOOKBACK_DAYS);
+        LocalDate today = LocalDate.now(zone);
+        LocalDate from = today.minusDays(LOOKBACK_DAYS);
+        // Give a transfer's other half time to post before guessing: once paired it isn't a leftover.
+        LocalDate settled = today.minusDays(TransferMatcher.MAX_DAYS_APART + 1L);
         List<Transaction> out = new ArrayList<>();
         for (Transaction t : txns.findByDayGreaterThanEqual(from)) {
+            if (t.getDay().isAfter(settled)) {
+                continue;
+            }
             boolean guess = t.getCategorySource() == null || t.getCategorySource() == CategorySource.DEFAULT;
             boolean leftover = t.getCategory() == null || LEFTOVERS.contains(t.getCategory().getName());
             if (guess && leftover && !t.isPending() && !t.getAccount().isHidden() && t.getPairedTxnId() == null) {

@@ -81,6 +81,10 @@ public class Categorizer {
             set(t, guardSavings(t, provider, ctx), CategorySource.PROVIDER);
             return;
         }
+        // The shortcut only files what nothing else could, so its choice stands until a rule or you say otherwise.
+        if (t.getCategorySource() == CategorySource.AI && t.getCategory() != null) {
+            return;
+        }
         if (t.getCategorySource() == CategorySource.TRANSFER_MATCH && t.getPairedTxnId() != null && t.getCategory() != null) {
             return;
         }

@@ -613,3 +613,15 @@ svg.mbars line.avg { stroke: var(--ink-2); stroke-width: 1; opacity: 0.6; }
 .cal-total.up, .month-row .meta.up { color: var(--good-ink); }
 .cal-total.down, .month-row .meta.down { color: var(--critical); }
 .cal-detail:empty { display: none; }
+
+/* The shortcut setup */
+.meta.wrap, .row .meta.wrap { white-space: normal; }
+.share-new { display: grid; gap: 8px; padding: 0 16px 14px; }
+.share-url { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--sunken); padding: 10px 12px; border-radius: 10px; overflow-wrap: anywhere; user-select: all; }
+.card > .share-new { padding: 12px 0 0; }
+ol.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.step { display: flex; gap: 12px; }
+.step-n { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 700; }
+.step-body { min-width: 0; display: grid; gap: 4px; }
+.step-body .title { font-weight: 600; }
+code.copyable { font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--sunken); padding: 8px 10px; border-radius: 8px; overflow-wrap: anywhere; cursor: pointer; }

@@ -36,4 +36,19 @@ public class Settings {
             }
         });
     }
+
+    static final String SHORTCUT_TOKEN = "shortcut-token-sha256";
+
+    /** SHA-256 of the iPhone shortcut's token, or null if none was ever made. */
+    public String shortcutTokenHash() {
+        return repo.findById(SHORTCUT_TOKEN).map(AppSetting::getValue).orElse(null);
+    }
+
+    public void setShortcutTokenHash(String hash) {
+        tx.executeWithoutResult(s -> {
+            AppSetting setting = repo.findById(SHORTCUT_TOKEN).orElseGet(() -> new AppSetting(SHORTCUT_TOKEN, hash));
+            setting.setValue(hash);
+            repo.save(setting);
+        });
+    }
 }

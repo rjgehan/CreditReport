@@ -2,8 +2,6 @@ package cloud.gehan.finance.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -28,7 +26,6 @@ public class Paystub {
     /** Words in the deposit's description that identify this employer, e.g. ACME PAYROLL. */
     private String matchPattern;
 
-    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private PayFrequency frequency = PayFrequency.BIWEEKLY;
 

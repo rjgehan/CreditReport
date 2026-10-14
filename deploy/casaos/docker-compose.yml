@@ -1,21 +1,21 @@
-# Finance on CasaOS, reached over Tailscale.
+# Finance on CasaOS, reachable only over Tailscale.
 #
-# There is no tunnel and nothing on the public internet: the app listens on a
-# LAN port, and from anywhere else you reach it through the server's Tailscale
-# address (http://<server tailscale name or 100.x address>:8095). Tailscale is
-# the gate, so the sign-in is a simple password you enter once a year per device.
+# The container listens on 127.0.0.1 only, so nothing on your LAN or the
+# internet can reach it. Tailscale on the server publishes it to your tailnet
+# with a real HTTPS certificate:
 #
-# BEFORE YOU IMPORT
+#   https://<server-name>.<your-tailnet>.ts.net
 #
-# 1. The data directory, owned by the UID the image runs as:
+# Full walkthrough: DEPLOY.md in the repository. In short, before importing:
 #
-#      sudo mkdir -p /DATA/AppData/finance/teller
-#      sudo chown -R 10001:10001 /DATA/AppData/finance
+#   sudo mkdir -p /DATA/AppData/finance/teller
+#   sudo chown -R 10001:10001 /DATA/AppData/finance
+#   (copy certificate.pem and private_key.pem from Teller into .../teller/)
 #
-# 2. Teller (free): put certificate.pem and private_key.pem from the Teller
-#    dashboard in /DATA/AppData/finance/teller/ and fill in TELLER_APPLICATION_ID.
+# Then: CasaOS -> + -> Custom Install -> Import -> paste -> fill in CHANGE ME,
+# and on the server:
 #
-# Then: CasaOS -> + -> Custom Install -> Import -> paste -> fill in CHANGE ME.
+#   sudo tailscale serve --bg --https=443 http://127.0.0.1:8095
 
 name: finance
 
@@ -30,20 +30,27 @@ services:
         limits:
           memory: 768M
     ports:
+      # Loopback only: Tailscale serve is the one way in.
       - target: 8080
+        host_ip: 127.0.0.1
         published: "8095"
         protocol: tcp
     environment:
-      # CHANGE ME. Your sign-in. A bcrypt hash ({bcrypt}$2a$...) works too.
+      # CHANGE ME. Your sign-in. You enter it once per device; it lasts a year.
       - APP_USERNAME=me
       - APP_PASSWORD=CHANGE_ME
-      # CHANGE ME. Encrypts bank tokens at rest: openssl rand -base64 32
-      # Keep a copy somewhere safe; without it the stored tokens can't be read.
-      - APP_ENCRYPTION_KEY=
-      - TELLER_APPLICATION_ID=
+      # CHANGE ME. Encrypts bank tokens at rest. Generate on the server with:
+      #   openssl rand -base64 32
+      # Keep a copy in your password manager; without it the stored bank
+      # connections can't be read and you'd have to reconnect them.
+      - APP_ENCRYPTION_KEY=CHANGE_ME
+      # CHANGE ME. From the Teller dashboard (starts with app_).
+      - TELLER_APPLICATION_ID=CHANGE_ME
       - TELLER_ENVIRONMENT=development
       - TELLER_CERTIFICATE=/data/teller/certificate.pem
       - TELLER_PRIVATE_KEY=/data/teller/private_key.pem
+      # Tailscale serve terminates HTTPS, so cookies can be HTTPS-only.
+      - SESSION_COOKIE_SECURE=true
       - APP_DEMO_DATA=false
       - APP_DATA_DIR=/data
       - TZ=America/New_York
@@ -73,18 +80,18 @@ services:
             en_us: Your sign-in password.
         - container: APP_ENCRYPTION_KEY
           description:
-            en_us: "32 random bytes, base64 (openssl rand -base64 32). Encrypts bank tokens. Back it up."
+            en_us: "openssl rand -base64 32. Encrypts bank tokens. Back it up."
         - container: TELLER_APPLICATION_ID
           description:
             en_us: From the Teller dashboard (starts with app_).
       ports:
         - container: "8080"
           description:
-            en_us: Web UI. Open it over Tailscale from your phone.
+            en_us: Loopback only. Open it at https://<server>.<tailnet>.ts.net after running tailscale serve.
       volumes:
         - container: /data
           description:
-            en_us: finance.db and the Teller certificate. Must be owned by UID 10001.
+            en_us: finance.db, the Teller certificate and logo cache. Must be owned by UID 10001. Back it up.
 
 x-casaos:
   architectures:
@@ -102,9 +109,9 @@ x-casaos:
     en_us: >-
       Self-hosted personal finance: bank and card syncing through Teller,
       investments priced from holdings, a cash-flow Sankey, spending targets,
-      savings goals and a monthly score.
+      savings goals and a monthly score. Reachable only over Tailscale.
   icon: https://raw.githubusercontent.com/rjgehan/CreditReport/main/src/main/resources/static/icons/apple-touch-icon.png
-  scheme: http
+  scheme: https
   index: /
   port_map: "8095"
   store_app_id: finance

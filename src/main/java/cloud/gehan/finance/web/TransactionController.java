@@ -28,6 +28,7 @@ import org.springframework.web.multipart.MultipartFile;
 import cloud.gehan.finance.model.Account;
 import cloud.gehan.finance.model.AmountSign;
 import cloud.gehan.finance.model.Category;
+import cloud.gehan.finance.model.CategoryKind;
 import cloud.gehan.finance.model.CategoryRule;
 import cloud.gehan.finance.model.CategorySource;
 import cloud.gehan.finance.model.Transaction;
@@ -105,7 +106,7 @@ public class TransactionController {
                 where.add(cb.equal(root.get("category").get("id"), Long.valueOf(category)));
             }
             if (kind != null && !kind.isBlank()) {
-                where.add(cb.equal(root.get("category").get("kind").as(String.class), kind.toUpperCase(Locale.ROOT)));
+                where.add(cb.equal(root.get("category").get("kind"), CategoryKind.valueOf(kind.toUpperCase(Locale.ROOT))));
             }
             if (q != null && !q.isBlank()) {
                 String like = "%" + q.trim().toLowerCase(Locale.ROOT) + "%";

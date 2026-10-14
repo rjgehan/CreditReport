@@ -86,10 +86,15 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-                        .csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler()))
+                        .csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler())
+                        // The shortcut authenticates with its own token, not a cookie, so
+                        // there is no session to forge requests against.
+                        .ignoringRequestMatchers("/api/shortcut/answer"))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/login.html", "/login", "/assets/**", "/icons/**",
+                                // The iPhone shortcut checks its own token on every request.
+                                "/api/shortcut/prompt", "/api/shortcut/answer",
                                 "/manifest.webmanifest", "/favicon.ico", "/robots.txt",
                                 "/actuator/health", "/error"
                         ).permitAll()

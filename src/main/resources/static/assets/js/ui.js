@@ -165,3 +165,25 @@ export function logoAvatar(domain, fallback) {
   box.append(img);
   return box;
 }
+
+/**
+ * Copies text from a tap. The Clipboard API only exists on HTTPS; on plain http
+ * (a LAN address) this falls back to selecting a hidden field and copying that.
+ */
+export async function copyText(text) {
+  if (window.isSecureContext && navigator.clipboard) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch { /* fall through */ }
+  }
+  const area = h('textarea', { readonly: true, style: { position: 'fixed', top: '0', left: '0', opacity: '0' } });
+  area.value = text;
+  document.body.append(area);
+  area.select();
+  area.setSelectionRange(0, text.length);
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { ok = false; }
+  area.remove();
+  return ok;
+}

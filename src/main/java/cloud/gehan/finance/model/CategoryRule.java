@@ -4,8 +4,6 @@ import java.time.Instant;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -33,12 +31,10 @@ public class CategoryRule {
     @JoinColumn(name = "category_id")
     private Category category;
 
-    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private AmountSign sign = AmountSign.ANY;
 
     /** Only applies to accounts of this type, when set. */
-    @Enumerated(EnumType.STRING)
     private AccountType accountType;
 
     /** Higher wins. Rules you create start above the built-in ones. */

@@ -4,10 +4,12 @@ package cloud.gehan.finance.model;
 public enum CategorySource {
     /** You picked it. Nothing automatic ever changes it. */
     MANUAL,
-    /** One of the rules on the Plan page matched. */
+    /** One of your rules matched (Activity, Rules). */
     RULE,
     /** The provider said so (Teller's transaction category). */
     PROVIDER,
+    /** Filed by Apple Intelligence through the iPhone shortcut, for something no rule or provider covered. */
+    AI,
     /** Paired with the opposite leg in another of your accounts. */
     TRANSFER_MATCH,
     /** A guess from the account type and the sign of the amount. */

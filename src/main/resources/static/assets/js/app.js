@@ -10,6 +10,7 @@ import * as accounts from './views/accounts.js';
 import * as history from './views/history.js';
 import * as plan from './views/plan.js';
 import * as investment from './views/investment.js';
+import * as shortcut from './views/shortcut.js';
 
 // Tabs first; the rest are screens reached from a tab, with a back button to it.
 const ROUTES = [
@@ -23,6 +24,7 @@ const ROUTES = [
   { path: 'paychecks', title: 'Paychecks', parent: 'flow', view: { render: plan.paychecksPage } },
   { path: 'rules', title: 'Rules', parent: 'activity', view: { render: plan.rulesPage } },
   { path: 'investment', title: 'Investments', parent: 'accounts', view: investment },
+  { path: 'shortcut', title: 'iPhone shortcut', parent: 'accounts', view: shortcut },
 ];
 
 export const app = { me: null, rerender: () => {} };

@@ -65,6 +65,13 @@ export async function render(params, app) {
       h('button', { class: 'btn', onclick: () => addManual(app, refresh) }, 'Add by hand'),
       h('button', { class: 'btn', onclick: () => importSheet(accounts, refresh) }, icon('upload', 18), 'Import statement')));
 
+  root.append(h('div', { class: 'section-title' }, 'More'),
+    h('section', { class: 'card flush' },
+      h('a', { class: 'row tap', href: '#/shortcut' },
+        h('div', { class: 'main' }, h('div', { class: 'title' }, 'iPhone shortcut'),
+          h('div', { class: 'meta' }, 'Files leftover transactions with Apple Intelligence')),
+        icon('chevron', 18))));
+
   if (connections.length) {
     const ul = h('div', { class: 'list' });
     for (const c of connections) {

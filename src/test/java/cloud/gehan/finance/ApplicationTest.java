@@ -58,6 +58,24 @@ class ApplicationTest {
     }
 
     @Test
+    void shortcutNeedsItsToken() throws Exception {
+        mvc.perform(get("/api/shortcut/prompt")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/shortcut/prompt").header("Authorization", "Bearer wrong")).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/shortcut/answer").header("Authorization", "Bearer wrong").content("1 | Dining"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void shortcutWorksWithAFreshToken() throws Exception {
+        String body = mvc.perform(post("/api/shortcut/token").with(user("me")).with(csrf()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String token = body.replaceAll(".*\"token\":\"([^\"]+)\".*", "$1");
+        mvc.perform(get("/api/shortcut/prompt").header("Authorization", "Bearer " + token)).andExpect(status().isOk());
+        mvc.perform(post("/api/shortcut/answer").header("Authorization", "Bearer " + token).content("none"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void manualAccountRoundTrip() throws Exception {
         mvc.perform(post("/api/accounts").with(user("me")).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"name\":\"Wallet\",\"type\":\"CHECKING\",\"balanceCents\":12345}"))

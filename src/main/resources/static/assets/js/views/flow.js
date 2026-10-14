@@ -1,14 +1,18 @@
+// Flow answers one question: where did the money go in this period?
+// A period switcher and one Sankey that fits the screen. Nothing else.
+
 import { get } from '../api.js';
 import { h, onMount, segmented } from '../ui.js';
-import { money, pct, monthLabel, shiftMonth, thisMonth, KIND_COLOR } from '../fmt.js';
+import { money, pct, monthLabel, shiftMonth, thisMonth } from '../fmt.js';
 import { sankey } from '../charts.js';
 
 const RANGES = [
-  ['month', 'Month'],
-  ['3', '3-mo avg'],
-  ['6', '6-mo avg'],
-  ['12', '12-mo avg'],
+  ['month', '1M'],
+  ['3', '3M'],
+  ['6', '6M'],
+  ['12', '12M'],
 ];
+const RANGE_NAMES = { month: 'This month', 3: '3-month average', 6: '6-month average', 12: '12-month average' };
 
 export async function render(params, app) {
   const range = params.get('range') || 'month';
@@ -16,86 +20,106 @@ export async function render(params, app) {
   const go = (r, m) => app.go(`#/flow?range=${r}&month=${m}`);
 
   let url;
-  let periodLabel;
+  let left;
   if (range === 'month') {
     url = `/api/flow?from=${month}&to=${month}`;
-    periodLabel = monthLabel(month);
+    left = h('div', { class: 'month-nav' },
+      h('button', { 'aria-label': 'Previous month', onclick: () => go('month', shiftMonth(month, -1)) }, '‹'),
+      h('span', null, monthLabel(month, true)),
+      h('button', { 'aria-label': 'Next month', disabled: month >= thisMonth(), onclick: () => go('month', shiftMonth(month, 1)) }, '›'));
   } else {
     // Averages end at the last complete month, so a half-finished one doesn't drag them down.
     const end = shiftMonth(thisMonth(), -1);
     const start = shiftMonth(end, -(Number(range) - 1));
     url = `/api/flow?from=${start}&to=${end}&average=true`;
-    periodLabel = `${monthLabel(start, true)} – ${monthLabel(end, true)}, per month`;
+    left = h('span', { class: 'avg-label' }, `${monthLabel(start, true)} – ${monthLabel(end, true)} avg`);
   }
+  const switcher = segmented(RANGES, range, (r) => go(r, month));
+  switcher.querySelectorAll('button').forEach((b, i) => b.setAttribute('aria-label', RANGE_NAMES[RANGES[i][0]]));
+
   const d = await get(url);
-  const root = h('div', { class: 'grid' });
-
-  const controls = h('div', { class: 'toolbar' }, segmented(RANGES, range, (r) => go(r, month)));
-  if (range === 'month') {
-    controls.append(h('div', { class: 'month-nav' },
-      h('button', { 'aria-label': 'Previous month', onclick: () => go('month', shiftMonth(month, -1)) }, '‹'),
-      h('span', null, monthLabel(month)),
-      h('button', { 'aria-label': 'Next month', disabled: month >= thisMonth(), onclick: () => go('month', shiftMonth(month, 1)) }, '›')));
-  }
-  root.append(controls);
-
-  root.append(h('div', { class: 'tiles' },
-    tile('Income', d.cashIncomeCents, 'var(--income)', d.hasPaystub ? `${money(d.grossIncomeCents)} gross` : 'take-home'),
-    tile('Spent', d.spentCents, 'var(--expense)', d.cashIncomeCents > 0 ? pct(d.spentCents / d.cashIncomeCents) + ' of take-home' : null),
-    tile('Saved & invested', d.savedCents, 'var(--savings)', d.savingsRate === null ? null : pct(d.savingsRate) + ' savings rate'),
-    tile(d.leftoverCents >= 0 ? 'Left over' : 'Overspent', Math.abs(d.leftoverCents), null, null)));
-
-  const chart = h('div', { class: 'sankey-scroll' });
-  const card = h('section', { class: 'card' },
-    h('div', { class: 'card-head' }, h('h2', null, 'Where the money went'), h('span', { class: 'hint' }, periodLabel)),
-    chart,
-    h('div', { class: 'legend' },
-      legend('Income', 'income'), legend('Spending', 'expense'), legend('Saving & investing', 'savings'),
-      d.hasPaystub ? legend('Taxes & deductions', 'tax') : null));
-  if (!d.hasPaystub) {
-    card.append(h('p', { class: 'hint', style: { marginBottom: 0 } },
-      'Starts from take-home pay. Add a paystub on the Plan tab to start from gross and see taxes and your 401(k).'));
-  }
-  root.append(card);
-  const income = d.cashIncomeCents || d.grossIncomeCents;
-  onMount(() => sankey(chart, d, {
-    total: d.hasPaystub ? d.grossIncomeCents : income,
+  const flow = compactFlow(d);
+  const chart = h('div');
+  onMount(() => sankey(chart, flow, {
+    total: flow.income,
     onNode: (n) => {
-      if (n.categoryId) app.go(`#/activity?category=${n.categoryId}${range === 'month' ? '&month=' + month : ''}`);
+      const suffix = range === 'month' ? `&month=${month}` : '';
+      if (n.categoryId) app.go(`#/activity?category=${n.categoryId}${suffix}`);
+      else if (n.id === 'exp:other' && range === 'month') app.go(`#/activity?month=${month}`);
+      else if (n.id === 'taxes') app.go('#/plan?tab=pay');
     },
   }));
 
-  // The same numbers as a table: readable without hovering, and with amounts hidden still shows shares.
-  const table = h('div', { class: 'list' });
-  const groups = [
-    ['Income', d.nodes.filter((n) => n.id.startsWith('inc:') || n.id.startsWith('net:') || n.id === 'from-savings')],
-    ['Spending', d.nodes.filter((n) => n.id.startsWith('exp:'))],
-    ['Saving & investing', d.nodes.filter((n) => n.id.startsWith('sav:'))],
-    ['Taxes & deductions', d.nodes.filter((n) => n.id.startsWith('tax:') || n.id.startsWith('ded:'))],
-  ];
-  for (const [name, list] of groups) {
-    if (!list.length) continue;
-    table.append(h('div', { class: 'date-head' }, name));
-    for (const n of list.sort((a, b) => b.valueCents - a.valueCents)) {
-      const row = h(n.categoryId ? 'a' : 'div', { class: 'row' + (n.categoryId ? ' tap' : ''),
-        href: n.categoryId ? `#/activity?category=${n.categoryId}${range === 'month' ? '&month=' + month : ''}` : null },
-      h('span', { class: 'key', style: { background: KIND_COLOR[n.kind] } }),
-      h('div', { class: 'main' }, h('div', { class: 'title' }, `${n.icon ? n.icon + ' ' : ''}${n.label}`)),
-      h('div', { class: 'amount' }, money(n.valueCents), h('div', { class: 'meta' }, income > 0 ? pct(n.valueCents / income) : '')));
-      table.append(row);
-    }
+  return h('div', null,
+    h('div', { class: 'toolbar period' }, left, switcher),
+    h('section', { class: 'card flow-card' }, chart),
+    screenReaderList(d, flow.income));
+}
+
+/**
+ * Folds the server's detailed graph (per-employer gross and take-home, an
+ * Income hub, five tax lines) into three columns that fit a phone:
+ * where it came from, what it did, and where exactly it went.
+ */
+export function compactFlow(d) {
+  const node = (id) => d.nodes.find((n) => n.id === id);
+  const value = (id) => node(id)?.valueCents || 0;
+  const taxes = d.nodes.filter((n) => n.id.startsWith('tax:') || n.id.startsWith('ded:')).reduce((s, n) => s + n.valueCents, 0);
+  const expLinks = d.links.filter((l) => l.source === 'spending' && l.target.startsWith('exp:')).sort((a, b) => b.valueCents - a.valueCents);
+  const savLinks = d.links.filter((l) => l.source === 'saved' && l.target.startsWith('sav:')).sort((a, b) => b.valueCents - a.valueCents);
+  const spending = expLinks.reduce((s, l) => s + l.valueCents, 0);
+  const saved = savLinks.reduce((s, l) => s + l.valueCents, 0);
+  const leftover = value('leftover');
+  const fromSavings = value('from-savings');
+  // Derived from the parts rather than read off a node, so averaged months still balance to the cent.
+  const income = taxes + spending + saved + leftover - fromSavings;
+
+  const nodes = [];
+  const links = [];
+  if (fromSavings > 0) nodes.push({ id: 'from', label: 'From savings', kind: 'savings' });
+  nodes.push({ id: 'in', label: d.hasPaystub ? 'Gross income' : 'Income', kind: 'income' });
+  nodes.push({ id: 'spend', label: 'Spending', kind: 'expense' });
+  nodes.push({ id: 'save', label: 'Saved', kind: 'savings' });
+  if (leftover > 0) nodes.push({ id: 'left', label: 'Left over', kind: 'income' });
+  if (taxes > 0) nodes.push({ id: 'taxes', label: 'Taxes', kind: 'tax' });
+
+  // Money out of savings pays for spending first, so its ribbon enters the top of Spending without crossing.
+  const fsToSpend = Math.min(fromSavings, spending);
+  const fsToSave = fromSavings - fsToSpend;
+  links.push({ source: 'from', target: 'spend', valueCents: fsToSpend });
+  links.push({ source: 'from', target: 'save', valueCents: fsToSave });
+  links.push({ source: 'in', target: 'spend', valueCents: spending - fsToSpend });
+  links.push({ source: 'in', target: 'save', valueCents: Math.max(0, saved - fsToSave) });
+  links.push({ source: 'in', target: 'left', valueCents: leftover });
+  links.push({ source: 'in', target: 'taxes', valueCents: taxes });
+
+  for (const l of expLinks) {
+    const n = node(l.target);
+    nodes.push({ id: l.target, label: n?.label || 'Other', kind: 'expense', categoryId: n?.categoryId ?? null });
+    links.push({ source: 'spend', target: l.target, valueCents: l.valueCents });
   }
-  root.append(h('section', { class: 'card flush' }, table));
-  return root;
+  for (const l of savLinks) {
+    const n = node(l.target);
+    nodes.push({ id: l.target, label: n?.label || 'Saved', kind: 'savings', categoryId: n?.categoryId ?? null });
+    links.push({ source: 'save', target: l.target, valueCents: l.valueCents });
+  }
+  return { nodes, links, income };
 }
 
-function tile(label, cents, color, delta) {
-  return h('div', { class: 'tile' },
-    h('div', { class: 'label' }, color ? h('span', { class: 'key', style: { background: color } }) : null, label),
-    h('div', { class: 'value' }, money(cents)),
-    delta ? h('div', { class: 'delta' }, delta) : null);
-}
-
-function legend(name, kind) {
-  return h('span', null, h('span', { class: 'key', style: { background: KIND_COLOR[kind] } }), name);
+/** The full breakdown for VoiceOver, including the per-employer and per-tax lines the graph folds together. */
+function screenReaderList(d, income) {
+  const groups = [
+    ['Income', (n) => n.id.startsWith('inc:') || n.id.startsWith('gross:') || n.id.startsWith('match:') || n.id === 'from-savings'],
+    ['Spending', (n) => n.id.startsWith('exp:')],
+    ['Saving and investing', (n) => n.id.startsWith('sav:')],
+    ['Taxes and deductions', (n) => n.id.startsWith('tax:') || n.id.startsWith('ded:')],
+  ];
+  const list = h('ul', { class: 'sr-only', 'aria-label': 'Cash flow breakdown' });
+  for (const [name, test] of groups) {
+    const items = d.nodes.filter(test).sort((a, b) => b.valueCents - a.valueCents);
+    if (!items.length) continue;
+    list.append(h('li', null, name, h('ul', null, items.map((n) =>
+      h('li', null, `${n.label}: ${money(n.valueCents)}${income > 0 ? ', ' + pct(n.valueCents / income) : ''}`)))));
+  }
+  return list;
 }

@@ -25,10 +25,8 @@ import cloud.gehan.finance.model.ProviderType;
 import cloud.gehan.finance.repo.AccountRepository;
 import cloud.gehan.finance.repo.BalanceSnapshotRepository;
 import cloud.gehan.finance.repo.ConnectionRepository;
-import cloud.gehan.finance.repo.TransactionRepository;
-import cloud.gehan.finance.web.Views.TxnView;
 
-/** Everything the Home screen shows, in one request. */
+/** Everything the Home screen shows, in one request; Accounts reads the net worth history from it too. */
 @Service
 @Transactional(readOnly = true)
 public class SummaryService {
@@ -38,22 +36,18 @@ public class SummaryService {
     private final AccountRepository accounts;
     private final BalanceSnapshotRepository snapshots;
     private final ConnectionRepository connections;
-    private final TransactionRepository txns;
     private final FlowService flow;
     private final TargetService targets;
-    private final AppProperties props;
     private final ZoneId zone;
 
     public SummaryService(AccountRepository accounts, BalanceSnapshotRepository snapshots,
-            ConnectionRepository connections, TransactionRepository txns, FlowService flow, TargetService targets,
+            ConnectionRepository connections, FlowService flow, TargetService targets,
             AppProperties props) {
         this.accounts = accounts;
         this.snapshots = snapshots;
         this.connections = connections;
-        this.txns = txns;
         this.flow = flow;
         this.targets = targets;
-        this.props = props;
         this.zone = props.zoneId();
     }
 
@@ -67,9 +61,6 @@ public class SummaryService {
             long savedCents, long leftoverCents, Double savingsRate) {
     }
 
-    public record CategoryAmount(Long categoryId, String name, String icon, long cents) {
-    }
-
     public record Card(Long id, String name, String institution, String mask, long balanceCents, Long limitCents,
             Double utilization, LocalDate dueDate, Long minimumPaymentCents, Long statementBalanceCents) {
     }
@@ -79,9 +70,8 @@ public class SummaryService {
 
     public record Home(String month, boolean currentMonth, int dayOfMonth, int daysInMonth,
             long netWorthCents, long assetsCents, long liabilitiesCents, List<Group> groups,
-            List<Point> netWorthHistory, MonthTotals totals, List<CategoryAmount> topSpending,
-            TargetService.Progress targets, List<Card> cards, List<MonthTotals> trend, List<TxnView> recent,
-            Instant lastSyncedAt, List<Problem> problems, boolean hasAccounts, boolean demo) {
+            List<Point> netWorthHistory, MonthTotals totals, TargetService.Progress targets, List<Card> cards,
+            Instant lastSyncedAt, List<Problem> problems, boolean hasAccounts) {
     }
 
     public Home home(YearMonth month) {
@@ -112,15 +102,6 @@ public class SummaryService {
         });
 
         FlowService.Breakdown b = flow.month(month);
-        List<CategoryAmount> top = b.expenses().entrySet().stream().limit(6)
-                .map(e -> new CategoryAmount(e.getKey().categoryId(), e.getKey().name(), e.getKey().icon(), e.getValue()))
-                .toList();
-
-        List<MonthTotals> trend = new ArrayList<>();
-        for (int i = HISTORY_MONTHS - 1; i >= 0; i--) {
-            YearMonth m = month.minusMonths(i);
-            trend.add(totals(m, i == 0 ? b : flow.month(m)));
-        }
 
         List<Card> cards = visible.stream()
                 .filter(a -> a.getType() == AccountType.CREDIT_CARD)
@@ -146,9 +127,8 @@ public class SummaryService {
         boolean current = YearMonth.from(today).equals(month);
         return new Home(month.toString(), current, current ? today.getDayOfMonth() : month.lengthOfMonth(),
                 month.lengthOfMonth(), assets - liabilities, assets, liabilities, groupList,
-                netWorthHistory(visible, today), totals(month, b), top, targets.progress(month), cards, trend,
-                txns.findTop10ByAccountHiddenFalseOrderByDayDescIdDesc().stream().map(TxnView::of).toList(),
-                lastSynced, problems, !visible.isEmpty(), props.demoData());
+                netWorthHistory(visible, today), totals(month, b), targets.progress(month), cards,
+                lastSynced, problems, !visible.isEmpty());
     }
 
     private static MonthTotals totals(YearMonth m, FlowService.Breakdown b) {

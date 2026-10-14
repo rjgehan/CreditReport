@@ -25,6 +25,8 @@
 
   --good: #0ca30c;
   --good-ink: #006300;
+  --warning-ink: #8a5a00;
+  --meter-ok: #52514e;
   --warning: #fab219;
   --serious: #ec835a;
   --critical: #d03b3b;
@@ -56,6 +58,8 @@
     --savings: #199e70;
     --tax: #6b6a65;
     --good-ink: #0ca30c;
+    --warning-ink: #fab219;
+    --meter-ok: #c3c2b7;
     --shadow: none;
   }
 }
@@ -78,6 +82,8 @@
   --savings: #199e70;
   --tax: #6b6a65;
   --good-ink: #0ca30c;
+  --warning-ink: #fab219;
+  --meter-ok: #c3c2b7;
   --shadow: none;
 }
 
@@ -304,14 +310,19 @@ label.stack { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color:
 .meter-row .top { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .meter-row .top .name { flex: 1; font-weight: 550; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .meter-row .top .nums { font-size: 14px; color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.meter { position: relative; height: 8px; border-radius: 4px; background: var(--accent-wash); overflow: visible; }
-.meter .fill { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--accent); max-width: 100%; }
-.meter.watch { background: #fde7b0; }
+/* One track colour in both themes; the fill carries meaning. Calm is neutral ink,
+   colour appears only when something needs attention (or for saving, its series hue). */
+.meter { position: relative; height: 8px; border-radius: 4px; background: var(--sunken); overflow: visible; }
+.meter .fill { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--meter-ok); max-width: 100%; }
 .meter.watch .fill { background: var(--warning); }
-.meter.over { background: #f6c9c9; }
 .meter.over .fill { background: var(--critical); }
 .meter.done .fill, .meter.savings .fill { background: var(--savings); }
-.meter.done, .meter.savings { background: color-mix(in srgb, var(--savings) 22%, transparent); }
+.meter.lg { height: 10px; border-radius: 5px; }
+.meter.lg .fill { border-radius: 5px; }
+.meter.sm { height: 6px; border-radius: 3px; }
+.meter.sm .fill { border-radius: 3px; }
+.meter.xs { height: 4px; border-radius: 2px; }
+.meter.xs .fill { border-radius: 2px; }
 .meter .pace { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink); border-radius: 1px; opacity: 0.55; }
 .meter-row .foot { font-size: 12px; color: var(--ink-3); margin-top: 6px; display: flex; justify-content: space-between; gap: 8px; }
 
@@ -335,7 +346,6 @@ label.stack { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color:
 .tooltip .t-row strong { font-variant-numeric: tabular-nums; }
 .tooltip .t-row .t-name { color: var(--ink-2); }
 
-.sankey-scroll { overflow-x: auto; margin: 0 -16px; padding: 0 16px; -webkit-overflow-scrolling: touch; }
 .sankey text.node-label { fill: var(--ink); font-size: 12.5px; font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
 .sankey text.node-value { fill: var(--ink-2); font-size: 11.5px; font-weight: 500; paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
 .sankey .link { fill-opacity: 0.32; transition: fill-opacity .12s; cursor: pointer; }
@@ -392,4 +402,76 @@ body.private .private-blur { filter: blur(7px); }
 
 /* Rows and tiles that are links keep ink colour; only inline links are blue. */
 a.row, a.tile, a.meter-row, a.banner { color: inherit; }
-.sankey tspan.node-value { font-weight: 500; }
+.sankey tspan.node-value { fill: var(--ink-2); font-size: 11.5px; font-weight: 500; }
+
+/* --- Home ---------------------------------------------------------------------- */
+
+.home-col { display: grid; gap: 14px; align-content: start; min-width: 0; }
+
+.nw { display: block; padding: 12px 16px; color: inherit; }
+.nw-top { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; line-height: 18px; }
+.nw-top .label { color: var(--ink-2); font-weight: 500; }
+.nw-top .status { color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nw-top .status.stale { color: var(--warning-ink); }
+.nw-top .status.bad { color: var(--critical); font-weight: 600; }
+.nw-main { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-top: 2px; }
+.nw-figure { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; line-height: 34px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nw-change { font-size: 15px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.nw-change .quiet { font-size: 13px; font-weight: 400; color: var(--ink-3); }
+.up { color: var(--good-ink); }
+.down { color: var(--critical); }
+
+.month-head { display: flex; justify-content: space-between; font-size: 13px; line-height: 18px; }
+.month-head .name { font-weight: 600; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; }
+.month-head .day { color: var(--ink-3); }
+.month-figure { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 6px; min-height: 40px; }
+.month-figure .big { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; line-height: 40px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.month-figure .unit { font-size: 17px; font-weight: 500; color: var(--ink-2); letter-spacing: 0; }
+.month-figure .big.down .unit { color: var(--critical); }
+.month .meter { margin-top: 10px; }
+.month-foot { font-size: 12px; line-height: 16px; color: var(--ink-3); margin-top: 6px; }
+.month-rule { border: 0; border-top: 1px solid var(--hairline); margin: 14px 0; }
+.strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; color: inherit; }
+.strip .label { display: flex; align-items: center; gap: 5px; font-size: 12px; line-height: 16px; color: var(--ink-2); white-space: nowrap; overflow: hidden; }
+.strip .label .key { width: 8px; height: 8px; border-radius: 2px; }
+.strip .value { font-size: 17px; font-weight: 650; line-height: 22px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.due-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px 12px 13px; border-left: 3px solid var(--warning); color: inherit; font-size: 14px; }
+.due-row .text { flex: 1; font-weight: 550; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.due-row .amt { font-weight: 600; font-variant-numeric: tabular-nums; }
+.due-row + .due-row { border-top: 1px solid var(--hairline); }
+
+.tcard { padding-bottom: 8px; }
+.tcard-head { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 16px 8px; color: inherit; }
+.tcard-head h2 { font-size: 13px; font-weight: 600; color: var(--ink-2); margin: 0; text-transform: uppercase; letter-spacing: 0.04em; }
+.tcard-head h2 .more { color: var(--ink-3); font-weight: 500; text-transform: none; letter-spacing: 0; }
+.tcard-head .col { font-size: 12px; color: var(--ink-3); width: 64px; text-align: right; }
+.trow { display: grid; grid-template-columns: 96px 1fr 64px; gap: 12px; align-items: center; height: 36px; padding: 0 16px; color: inherit; }
+.trow:hover { background: var(--surface-2); }
+.trow .name { font-size: 14px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trow .amt { font-size: 14px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.trow .amt.down { color: var(--critical); }
+
+.grow-row { display: block; padding: 8px 16px; color: inherit; }
+.grow-row:hover { background: var(--surface-2); }
+.grow-row .line { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 20px; }
+.grow-row .name { font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.grow-row .val { color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.grow-row .val .done { color: var(--good-ink); font-weight: 600; }
+.grow-row .val .behind { color: var(--warning-ink); font-weight: 600; }
+.grow-row .meter { margin-top: 6px; }
+.meter.behind .fill { background: var(--warning); }
+
+/* --- Flow ---------------------------------------------------------------------- */
+
+.toolbar.period { flex-wrap: nowrap; justify-content: space-between; margin: 0 0 12px; min-height: 40px; }
+.toolbar.period .month-nav span { min-width: 72px; }
+.toolbar.period .segmented button { padding: 6px 9px; }
+.toolbar.period .avg-label { font-size: 14px; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+.flow-card { padding: 12px; }
+.flow-empty { color: var(--ink-3); text-align: center; padding: 48px 0; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}

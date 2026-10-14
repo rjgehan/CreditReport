@@ -53,7 +53,7 @@ async function render() {
     flushMount();
   } catch (e) {
     if (current !== token) return;
-    clear(view).append(h('div', { class: 'card empty' }, h('div', { class: 'big' }, '⚠️'), e.message));
+    clear(view).append(h('div', { class: 'card empty' }, e.message));
   } finally {
     if (current === token) view.classList.remove('loading');
   }

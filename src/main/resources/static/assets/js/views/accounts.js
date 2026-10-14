@@ -1,14 +1,24 @@
 import { get, post, put, patch, del, upload, loadScript } from '../api.js';
-import { h, clear, sheet, toast, field, busy, confirmSheet, icon } from '../ui.js';
-import { money, shares, ago, parseMoney, centsToInput, TYPE_LABEL, shortDate } from '../fmt.js';
+import { h, clear, sheet, toast, field, busy, confirmSheet, icon, onMount } from '../ui.js';
+import { money, pct, shares, ago, parseMoney, centsToInput, TYPE_LABEL, shortDate } from '../fmt.js';
+import { lineChart } from '../charts.js';
 
 const GROUP_ORDER = ['Cash', 'Credit', 'Investments', 'Retirement', 'Loans', 'Other'];
 
 export async function render(params, app) {
-  const [accounts, connections, investments] = await Promise.all([
-    get('/api/accounts'), get('/api/connections'), get('/api/investments')]);
+  const [accounts, connections, investments, summary] = await Promise.all([
+    get('/api/accounts'), get('/api/connections'), get('/api/investments'), get('/api/summary')]);
   const root = h('div', { class: 'grid' });
   const refresh = () => app.rerender();
+
+  if (accounts.length) {
+    const chart = h('div', { style: { marginTop: '10px' } });
+    root.append(h('section', { class: 'card' },
+      h('div', { class: 'nw-top' }, h('span', { class: 'label' }, 'Net worth')),
+      h('div', { class: 'nw-figure', style: { fontSize: '28px' } }, money(summary.netWorthCents)),
+      chart));
+    onMount(() => lineChart(chart, summary.netWorthHistory, { height: 140 }));
+  }
 
   root.append(h('div', { class: 'btn-row' },
     h('button', { class: 'btn primary', onclick: () => connectBank(app, null, refresh) }, icon('plus', 18), 'Connect a bank'),
@@ -36,6 +46,8 @@ export async function render(params, app) {
       const inv = holdingsByAccount.get(a.id);
       const sub = [];
       if (a.mask) sub.push('••' + a.mask);
+      if (a.type === 'CREDIT_CARD' && a.creditLimitCents) sub.push(`${pct(-a.balanceCents / a.creditLimitCents)} of ${money(a.creditLimitCents)} limit`);
+      if (a.type === 'CREDIT_CARD' && a.paymentDueDate) sub.push('due ' + shortDate(a.paymentDueDate));
       sub.push(inv && (inv.holdings.length || inv.plans.length) ? `${inv.holdings.length} holding${inv.holdings.length === 1 ? '' : 's'}`
         : a.manual ? 'updated by hand' : a.provider === 'TELLER' ? 'Teller' : a.provider === 'SIMPLEFIN' ? 'SimpleFIN' : '');
       if (a.balanceUpdatedAt) sub.push(ago(a.balanceUpdatedAt));

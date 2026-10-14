@@ -1,7 +1,7 @@
 import { get, post, put, del } from '../api.js';
 import { h, sheet, toast, field, busy, confirmSheet, segmented, icon } from '../ui.js';
-import { money, parseMoney, centsToInput, shortDate, thisMonth } from '../fmt.js';
-import { targetRow, goalRow } from './home.js';
+import { money, pct, parseMoney, centsToInput, shortDate, thisMonth } from '../fmt.js';
+import { meter } from '../charts.js';
 import { categories } from './activity.js';
 
 const TABS = [['targets', 'Targets'], ['goals', 'Goals'], ['pay', 'Paychecks'], ['rules', 'Rules']];
@@ -254,4 +254,36 @@ function ruleSheet(cats, refresh) {
     }));
     body.append(h('div', { class: 'form' }, field('Description contains', pattern, 'Whole words, any case.'), field('File as', cat), field('Applies to', sign), save));
   });
+}
+
+// --- Rows (the detailed versions; Home shows compact ones) -------------------------
+
+function targetRow(s) {
+  const badge = s.status === 'over' ? h('span', { class: 'pill bad' }, 'Over')
+    : s.status === 'watch' ? h('span', { class: 'pill warn' }, 'Watch') : null;
+  const left = s.limitCents - s.spentCents;
+  return h('a', { class: 'meter-row tap', style: { display: 'block' }, href: `#/activity?category=${s.categoryId}` },
+    h('div', { class: 'top' }, h('span', { class: 'name' }, s.name), badge,
+      h('span', { class: 'nums' }, `${money(s.spentCents)} / ${money(s.limitCents)}`)),
+    meter(s.fraction, s.status, s.expectedFraction),
+    h('div', { class: 'foot' }, h('span', null, left >= 0 ? `${money(left)} left` : `${money(-left)} over`),
+      h('span', null, pct(s.fraction) + ' used')));
+}
+
+function goalRow(g) {
+  let nums;
+  let foot;
+  if (g.type === 'SAVINGS_RATE') {
+    nums = `${g.currentPercent === null ? '—' : g.currentPercent.toFixed(0) + '%'} / ${g.targetPercent}%`;
+    foot = g.detail;
+  } else {
+    nums = `${money(g.currentCents)} / ${money(g.targetCents)}`;
+    foot = g.neededPerMonthCents ? `${g.detail} · ${money(g.neededPerMonthCents)}/mo to hit it by ${shortDate(g.targetDate)}` : g.detail;
+  }
+  return h('div', { class: 'meter-row' },
+    h('div', { class: 'top' }, h('span', { class: 'name' }, g.name),
+      g.status === 'done' ? h('span', { class: 'pill good' }, 'Done') : g.status === 'behind' ? h('span', { class: 'pill warn' }, 'Behind') : null,
+      h('span', { class: 'nums' }, nums)),
+    meter(g.fraction, g.status === 'done' ? 'done' : g.status === 'behind' ? 'behind' : 'savings'),
+    h('div', { class: 'foot' }, h('span', null, foot), h('span', null, pct(Math.min(g.fraction, 9.99)))));
 }

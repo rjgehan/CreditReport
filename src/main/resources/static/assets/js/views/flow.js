@@ -42,7 +42,9 @@ export async function render(params, app) {
   const switcher = segmented(RANGES, range, (r) => go(r, month));
   switcher.querySelectorAll('button').forEach((b, i) => b.setAttribute('aria-label', RANGE_NAMES[RANGES[i][0]]));
 
-  const d = await get(url);
+  // Enough months back to draw every bar: the 12-month range starts 12 months before last month.
+  const back = range === 'month' ? Math.max(0, monthsBetween(month, thisMonth())) + 6 : Number(range) + 1;
+  const [d, history] = await Promise.all([get(url), get('/api/history?count=' + Math.min(36, Math.max(13, back)))]);
   const flow = compactFlow(d);
   const chart = h('div');
   onMount(() => sankey(chart, flow, {
@@ -58,6 +60,7 @@ export async function render(params, app) {
   return h('div', null,
     h('div', { class: 'toolbar period' }, left, switcher),
     h('section', { class: 'card flow-card' }, caption ? h('div', { class: 'flow-caption' }, caption) : null, chart),
+    spendingByMonth(history, range, month, (m) => go('month', m)),
     screenReaderList(d, flow.income));
 }
 
@@ -127,4 +130,75 @@ function screenReaderList(d, income) {
       h('li', null, `${n.label}: ${money(n.valueCents)}${income > 0 ? ', ' + pct(n.valueCents / income) : ''}`)))));
   }
   return list;
+}
+
+/**
+ * Spending month by month: one row of bars, the month on screen highlighted, the
+ * average as a hairline. Tap a bar to open that month. Uses the History list, so
+ * it's the same "spent" as everywhere else.
+ */
+function spendingByMonth(history, range, month, open) {
+  const now = thisMonth();
+  const byMonth = new Map(history.map((m) => [m.month, m]));
+  // Multi-month ranges show exactly the months the Sankey covers (ending last
+  // month). One month shows six bars that always include the month on screen.
+  let end;
+  let count;
+  if (range === 'month') {
+    count = 6;
+    end = shiftMonth(month, 2) > now ? now : shiftMonth(month, 2);
+  } else {
+    count = Number(range) < 6 ? 6 : Number(range);
+    end = shiftMonth(now, -1);
+  }
+  const months = [];
+  for (let i = count - 1; i >= 0; i--) months.push(shiftMonth(end, -i));
+  const rangeStart = range === 'month' ? null : shiftMonth(end, -(Number(range) - 1));
+  const inRange = (m) => (range === 'month' ? m === month : m >= rangeStart);
+  const values = months.map((m) => byMonth.get(m)?.spentCents ?? 0);
+  // The average leaves out the month in progress and the partial first month of data.
+  const usable = (m) => m !== now && byMonth.get(m)?.covered;
+  const avgMonths = months.filter((m) => usable(m) && (range === 'month' || inRange(m)));
+  if (!avgMonths.length) return null;
+  const avg = avgMonths.reduce((s, m) => s + byMonth.get(m).spentCents, 0) / avgMonths.length;
+  const max = Math.max(avg, ...values) || 1;
+
+  const w = 300;
+  const ht = 72;
+  const gap = count > 6 ? 6 : 10;
+  const barW = (w - gap * (count - 1)) / count;
+  const y = (v) => ht - (v / max) * (ht - 4);
+  const svg = h('svg', { class: 'mbars', viewBox: `0 0 ${w} ${ht + 16}`, role: 'img', 'aria-label': 'Spending by month' });
+  months.forEach((m, i) => {
+    const x = i * (barW + gap);
+    const v = values[i];
+    const top = y(v);
+    const g = h('g', { class: 'mbar' + (inRange(m) ? ' on' : '') + (m === now ? ' partial' : ''), role: 'button', tabindex: 0,
+      'aria-label': `${monthLabel(m)}: ${money(v)}${m === now ? ' so far' : ''}` });
+    g.append(h('rect', { x, y: 0, width: barW, height: ht + 16, fill: 'transparent' }));
+    if (v > 0) {
+      const r = Math.min(4, (ht - top) / 2, barW / 2);
+      g.append(h('path', { class: 'bar', d: `M${x},${ht} L${x},${top + r} Q${x},${top} ${x + r},${top} L${x + barW - r},${top} Q${x + barW},${top} ${x + barW},${top + r} L${x + barW},${ht} Z` }));
+    }
+    g.append(h('text', { x: x + barW / 2, y: ht + 13, 'text-anchor': 'middle' }, monthLabel(m, true).slice(0, count > 6 ? 1 : 3)));
+    g.addEventListener('click', () => open(m));
+    g.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(m); });
+    svg.append(g);
+  });
+  svg.append(h('line', { class: 'avg', x1: 0, x2: w, y1: y(avg), y2: y(avg) }));
+
+  const selected = range === 'month' ? byMonth.get(month) : null;
+  return h('section', { class: 'card month-bars' },
+    h('div', { class: 'mb-head' },
+      h('span', { class: 'mb-title' }, 'Spent per month'),
+      h('span', { class: 'mb-note' }, selected
+        ? `${money(selected.spentCents)}${selected.current ? ' so far' : ''} · avg ${money(Math.round(avg))}`
+        : `avg ${money(Math.round(avg))}`)),
+    svg);
+}
+
+function monthsBetween(a, b) {
+  const [ay, am] = a.split('-').map(Number);
+  const [by, bm] = b.split('-').map(Number);
+  return (by - ay) * 12 + (bm - am);
 }

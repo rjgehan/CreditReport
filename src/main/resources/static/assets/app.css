@@ -553,3 +553,63 @@ label.row { cursor: pointer; }
 /* Edit sheets prefill amounts; with amounts hidden they stay blurred until you
    tap into the field to change one. */
 body.private input[inputmode="decimal"]:not(:focus) { color: transparent; text-shadow: 0 0 9px var(--ink); }
+.strip.two { grid-template-columns: 1fr 1fr; }
+.strip.two .value { font-size: 19px; }
+
+/* Flow: spending by month */
+.month-bars { margin-top: 12px; padding: 12px 14px 8px; }
+.mb-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.mb-title { font-size: 12px; font-weight: 600; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.04em; }
+.mb-note { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+svg.mbars { display: block; width: 100%; height: auto; overflow: visible; }
+.mbar { cursor: pointer; }
+.mbar .bar { fill: var(--expense); opacity: 0.32; }
+.mbar.on .bar { opacity: 1; }
+.mbar.partial .bar { opacity: 0.18; }
+.mbar.partial.on .bar { opacity: 0.6; }
+.mbar text { fill: var(--ink-3); font-size: 10px; font-family: var(--font); }
+.mbar.on text { fill: var(--ink); font-weight: 600; }
+svg.mbars line.avg { stroke: var(--ink-2); stroke-width: 1; opacity: 0.6; }
+
+.avatar.logo { background: #fff; padding: 0; overflow: hidden; }
+.avatar.logo img { width: 24px; height: 24px; object-fit: contain; display: block; }
+
+/* Investment account page */
+.inv-head { padding: 4px 4px 2px; }
+.inv-name { font-size: 14px; color: var(--ink-2); font-weight: 500; }
+.inv-value { font-size: 36px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.inv-day { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.inv-day .quiet { font-weight: 400; color: var(--ink-3); font-size: 13px; }
+.inv-cols, .inv-row { display: grid; grid-template-columns: 1fr auto 76px; gap: 12px; align-items: center; padding: 0 16px; }
+.inv-cols { font-size: 12px; color: var(--ink-3); height: 32px; border-bottom: 1px solid var(--hairline); }
+.inv-cols span:nth-child(n+2) { text-align: right; }
+.inv-row { width: 100%; min-height: 56px; border: 0; border-top: 1px solid var(--hairline); background: none; color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.inv-cols + .inv-row { border-top: 0; }
+.inv-row:hover { background: var(--surface-2); }
+.inv-row .sym { display: flex; flex-direction: column; min-width: 0; }
+.inv-row .sym strong { font-size: 16px; }
+.inv-row .sh { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.inv-row .val { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.inv-row .chg { justify-self: end; min-width: 68px; text-align: center; font-size: 13px; font-weight: 600; padding: 4px 6px; border-radius: 6px;
+  font-variant-numeric: tabular-nums; color: var(--ink-2); background: var(--sunken); }
+.inv-row .chg.up { color: #fff; background: var(--good); }
+.inv-row .chg.down { color: #fff; background: var(--critical); }
+.inv-foot { text-align: center; margin: 0; }
+
+/* History, trimmed */
+.recap-head { display: flex; justify-content: space-between; align-items: center; }
+.recap-head .name { font-size: 13px; font-weight: 600; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; }
+.recap-head .score .num { font-size: 34px; line-height: 38px; }
+.recap-facts { font-size: 15px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.parts { grid-template-columns: 1fr 1fr; gap: 10px 16px; margin-top: 12px; padding-top: 12px; }
+@media (min-width: 600px) { .parts { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.part-line { font-size: 12px; }
+.recap-cats { margin-top: 12px; padding-top: 4px; }
+.cat-row .delta { display: inline-flex; justify-content: flex-end; align-items: center; gap: 3px; color: var(--ink-3); }
+.cat-row .delta.more { color: var(--critical); }
+.cat-row .delta.less { color: var(--good-ink); }
+.cat-row .arrow { font-size: 9px; }
+.cal-total { font-weight: 700; font-variant-numeric: tabular-nums; }
+.cal-total.up, .month-row .meta.up { color: var(--good-ink); }
+.cal-total.down, .month-row .meta.down { color: var(--critical); }
+.cal-detail:empty { display: none; }

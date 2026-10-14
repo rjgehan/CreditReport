@@ -9,6 +9,7 @@ import cloud.gehan.finance.model.CategoryRule;
 import cloud.gehan.finance.model.Connection;
 import cloud.gehan.finance.model.Paystub;
 import cloud.gehan.finance.model.Transaction;
+import cloud.gehan.finance.service.MerchantLogos;
 import cloud.gehan.finance.service.ReferenceData;
 
 /** What the API sends. Entities never go over the wire directly; secrets live on them. */
@@ -20,7 +21,7 @@ public final class Views {
     public record TxnView(Long id, LocalDate day, long amountCents, String description, String merchant,
             Long accountId, String accountName, String accountType,
             Long categoryId, String categoryName, String categoryIcon, String categoryKind, String categorySource,
-            boolean pending, boolean paired, String notes, boolean manual) {
+            boolean pending, boolean paired, String notes, boolean manual, String logo) {
 
         public static TxnView of(Transaction t) {
             Category c = t.getCategory();
@@ -30,14 +31,15 @@ public final class Views {
                     c == null ? null : c.getId(), c == null ? null : c.getName(), c == null ? null : c.getIcon(),
                     c == null ? null : c.getKind().name(),
                     t.getCategorySource() == null ? null : t.getCategorySource().name(),
-                    t.isPending(), t.getPairedTxnId() != null, t.getNotes(), a.isManual());
+                    t.isPending(), t.getPairedTxnId() != null, t.getNotes(), a.isManual(),
+                    MerchantLogos.domainFor(t.getMerchant(), t.getDescription()));
         }
     }
 
     public record AccountView(Long id, String name, String institution, String mask, String type, String group,
             long balanceCents, Long availableCents, Long creditLimitCents, Long statementBalanceCents,
             Long minimumPaymentCents, LocalDate paymentDueDate, Double aprPercent, boolean hidden, boolean manual,
-            Long connectionId, String provider, Instant balanceUpdatedAt) {
+            Long connectionId, String provider, Instant balanceUpdatedAt, String logo) {
 
         public static AccountView of(Account a) {
             Connection c = a.getConnection();
@@ -46,7 +48,7 @@ public final class Views {
                     a.getStatementBalanceCents(), a.getMinimumPaymentCents(), a.getPaymentDueDate(),
                     a.getAprPercent(), a.isHidden(), a.isManual(),
                     c == null ? null : c.getId(), c == null ? "MANUAL" : c.getProvider().name(),
-                    a.getBalanceUpdatedAt());
+                    a.getBalanceUpdatedAt(), MerchantLogos.domainFor(a.getInstitution(), a.getName()));
         }
     }
 
@@ -60,9 +62,11 @@ public final class Views {
         }
     }
 
-    public record CategoryView(Long id, String name, String kind, String icon, String color, int sortOrder) {
+    public record CategoryView(Long id, String name, String kind, String icon, String color, int sortOrder,
+            boolean earnedIncome, boolean fixedCost) {
         public static CategoryView of(Category c) {
-            return new CategoryView(c.getId(), c.getName(), c.getKind().name(), c.getIcon(), c.getColor(), c.getSortOrder());
+            return new CategoryView(c.getId(), c.getName(), c.getKind().name(), c.getIcon(), c.getColor(), c.getSortOrder(),
+                    c.isEarnedIncome(), c.isFixedCost());
         }
     }
 

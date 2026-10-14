@@ -2,9 +2,9 @@
 // Net worth and its direction, what's left to spend this month, which targets
 // are tight, then goals. Tapping a card opens what manages it.
 
-import { get, put } from '../api.js';
-import { h, sheet, field, busy, toast } from '../ui.js';
-import { money, pct, monthLabel, ago, shortDate, privacy, parseDay, parseMoney, centsToInput } from '../fmt.js';
+import { get } from '../api.js';
+import { h } from '../ui.js';
+import { money, pct, monthLabel, ago, shortDate, privacy, parseDay } from '../fmt.js';
 import { meter } from '../charts.js';
 
 const MAX_TARGETS = 6;
@@ -18,7 +18,7 @@ export async function render(params, app) {
       h('a', { class: 'btn primary', href: '#/accounts' }, 'Add accounts'));
   }
 
-  const left = h('div', { class: 'home-col' }, netWorth(d), thisMonth(d, app), dueCards(d));
+  const left = h('div', { class: 'home-col' }, netWorth(d), thisMonth(d), dueCards(d));
   const right = h('div', { class: 'home-col' }, targets(d), goals(d));
   return h('div', { class: 'grid two' }, left, right);
 }
@@ -80,7 +80,7 @@ function syncStatus(d) {
 
 const PILL = { ok: 'good', watch: 'warn', over: 'bad' };
 
-function thisMonth(d, app) {
+function thisMonth(d) {
   const p = d.plan;
   let big;
   if (privacy.on) {
@@ -92,7 +92,6 @@ function thisMonth(d, app) {
   } else {
     big = h('span', { class: 'big down' }, money(-p.leftToSpendCents), h('span', { class: 'unit' }, ' over'));
   }
-  const perDay = p.perDayLeftCents === null ? null : Math.max(0, p.perDayLeftCents);
   const flowLink = `#/flow?range=month&month=${p.month}`;
 
   return h('section', { class: 'card month' },
@@ -102,47 +101,15 @@ function thisMonth(d, app) {
     h('div', { class: 'month-figure' }, big, h('span', { class: 'pill ' + PILL[p.status] }, p.verdict)),
     meter(p.spentFraction, p.status, p.current ? p.expectedFraction : null, 'lg'),
     h('hr', { class: 'month-rule' }),
-    h('div', { class: 'strip' },
+    h('div', { class: 'strip two' },
       stat('Income', 'var(--income)', (p.incomeEstimated ? '~' : '') + money(p.incomeCents), flowLink),
-      stat('To save', 'var(--savings)', p.savingsTargetCents === null ? 'Set' : money(p.savingsTargetCents),
-        null, () => savingsTargetSheet(p.savingsTargetCents, app)),
-      stat('Spent', 'var(--expense)', money(p.spentCents), flowLink),
-      stat('Per day', null, perDay === null ? '—' : money(perDay), null)));
+      stat('Spent', 'var(--expense)', money(p.spentCents), flowLink)));
 }
 
-function stat(label, color, value, href, onclick) {
-  const tag = href ? 'a' : onclick ? 'button' : 'div';
-  return h(tag, { class: 'stat' + (onclick ? ' tap' : ''), href, onclick, type: onclick ? 'button' : null },
+function stat(label, color, value, href) {
+  return h(href ? 'a' : 'div', { class: 'stat', href },
     h('div', { class: 'label' }, color ? h('span', { class: 'key', style: { background: color } }) : null, label),
-    h('div', { class: 'value' + (value === 'Set' ? ' set' : '') }, value));
-}
-
-function savingsTargetSheet(current, app) {
-  sheet('Savings target', (body, s) => {
-    // With amounts hidden the current target isn't shown, even here; typing a new
-    // one still works, and a blank field leaves it as it was.
-    const hidden = privacy.on;
-    const amount = h('input', { class: 'field', inputmode: 'decimal', value: hidden ? '' : centsToInput(current),
-      placeholder: hidden && current !== null ? 'Hidden. Type a new amount' : 'e.g. 1000' });
-    const save = h('button', { class: 'btn primary' }, 'Save');
-    save.addEventListener('click', busy(save, async () => {
-      const cents = parseMoney(amount.value);
-      if (!cents || cents <= 0) {
-        if (hidden || current === null) { s.close(); return; }
-        throw new Error('Enter an amount, or use Remove target');
-      }
-      await put('/api/settings', { savingsTargetCents: cents });
-      s.close(); toast('Saved'); app.rerender();
-    }));
-    const remove = current === null ? null : h('button', { class: 'btn danger', onclick: async () => {
-      await put('/api/settings', { savingsTargetCents: null });
-      s.close(); toast('Target removed'); app.rerender();
-    } }, 'Remove target');
-    body.append(h('div', { class: 'form' },
-      field('Keep this much each month', amount,
-        'Left to spend is income minus this minus what you\'ve spent so far.'),
-      h('div', { class: 'btn-row' }, save, remove)));
-  });
+    h('div', { class: 'value' }, value));
 }
 
 // --- Cards due soon (only when one is) ------------------------------------------

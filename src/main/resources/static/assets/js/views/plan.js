@@ -22,11 +22,17 @@ export const rulesPage = page((root, refresh) => rules(root, refresh));
 // --- Spending targets ---------------------------------------------------------------
 
 async function targets(root, refresh) {
-  const [progress, cats] = await Promise.all([get('/api/targets?month=' + thisMonth()), categories()]);
-  const budgeted = progress.budgetedCents;
-  root.append(h('div', { class: 'tiles' },
-    h('div', { class: 'tile' }, h('div', { class: 'label' }, 'Budgeted this month'), h('div', { class: 'value' }, money(budgeted))),
-    h('div', { class: 'tile' }, h('div', { class: 'label' }, 'Spent in those'), h('div', { class: 'value' }, money(progress.spentInBudgetsCents)))));
+  const [progress, cats, settings] = await Promise.all([
+    get('/api/targets?month=' + thisMonth()), categories(), get('/api/settings')]);
+  const target = settings.savingsTargetCents;
+  // The savings target is set once and rarely changes, so it lives here rather
+  // than on Home; Home's left-to-spend already has it taken out.
+  root.append(h('section', { class: 'card flush' },
+    h('button', { class: 'row', onclick: () => savingsTargetSheet(target, refresh) },
+      h('div', { class: 'main' }, h('div', { class: 'title' }, 'Savings target'),
+        h('div', { class: 'meta' }, 'Kept aside each month before anything is spendable')),
+      h('div', { class: 'amount' }, target === null ? h('span', { style: { color: 'var(--accent)' } }, 'Set') : money(target)),
+      icon('chevron', 18))));
   const card = h('section', { class: 'card flush' });
   const list = h('div', { class: 'list' });
   for (const s of progress.spending) {
@@ -292,4 +298,31 @@ function goalRow(g) {
       h('span', { class: 'nums' }, nums)),
     meter(g.fraction, g.status === 'done' ? 'done' : g.status === 'behind' ? 'behind' : 'savings'),
     h('div', { class: 'foot' }, h('span', null, foot), h('span', null, pct(Math.min(g.fraction, 9.99)))));
+}
+
+function savingsTargetSheet(current, refresh) {
+  sheet('Savings target', (body, s) => {
+    // With amounts hidden the current target isn't shown, even here; typing a new
+    // one still works, and a blank field leaves it as it was.
+    const hidden = privacy.on;
+    const amount = h('input', { class: 'field', inputmode: 'decimal', value: hidden ? '' : centsToInput(current),
+      placeholder: hidden && current !== null ? 'Hidden. Type a new amount' : 'e.g. 1000' });
+    const save = h('button', { class: 'btn primary' }, 'Save');
+    save.addEventListener('click', busy(save, async () => {
+      const cents = parseMoney(amount.value);
+      if (!cents || cents <= 0) {
+        if (hidden || current === null) { s.close(); return; }
+        throw new Error('Enter an amount, or use Remove target');
+      }
+      await put('/api/settings', { savingsTargetCents: cents });
+      s.close(); toast('Saved'); refresh();
+    }));
+    const remove = current === null ? null : h('button', { class: 'btn danger', onclick: async () => {
+      await put('/api/settings', { savingsTargetCents: null });
+      s.close(); toast('Target removed'); refresh();
+    } }, 'Remove target');
+    body.append(h('div', { class: 'form' },
+      field('Keep this much each month', amount, 'Left to spend on Home is income minus this minus what you\'ve spent.'),
+      h('div', { class: 'btn-row' }, save, remove)));
+  });
 }

@@ -146,3 +146,22 @@ export function flushMount() {
   }
 }
 export function discardMount() { mountQueue.length = 0; }
+
+/**
+ * A rounded avatar showing a merchant or bank logo when this server has one for
+ * the domain, falling back to the given glyph (a category icon) when it doesn't.
+ */
+export function logoAvatar(domain, fallback) {
+  const box = h('div', { class: 'avatar' + (domain ? ' logo' : '') });
+  if (!domain) {
+    box.append(fallback || '•');
+    return box;
+  }
+  const img = h('img', { src: '/api/logos/' + encodeURIComponent(domain), alt: '', loading: 'lazy', decoding: 'async' });
+  img.addEventListener('error', () => {
+    box.classList.remove('logo');
+    clear(box).append(fallback || '•');
+  });
+  box.append(img);
+  return box;
+}

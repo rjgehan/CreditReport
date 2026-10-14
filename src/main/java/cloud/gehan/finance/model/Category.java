@@ -31,6 +31,16 @@ public class Category {
 
     private int sortOrder;
 
+    /**
+     * Income kind only: money earned from work (a paycheck, a side hustle). Interest,
+     * dividends and stray deposits arrive as income-kind money too, but don't count
+     * as income anywhere in the app.
+     */
+    private Boolean earnedIncome;
+
+    /** Expense kind only: the same every month (rent, loan payments), so not worth watching month to month. */
+    private Boolean fixedCost;
+
     protected Category() {
     }
 
@@ -53,4 +63,10 @@ public class Category {
     public void setIcon(String icon) { this.icon = icon; }
     public int getSortOrder() { return sortOrder; }
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+    public boolean isEarnedIncome() { return Boolean.TRUE.equals(earnedIncome); }
+    public Boolean getEarnedIncome() { return earnedIncome; }
+    public void setEarnedIncome(Boolean earnedIncome) { this.earnedIncome = earnedIncome; }
+    public boolean isFixedCost() { return Boolean.TRUE.equals(fixedCost); }
+    public Boolean getFixedCost() { return fixedCost; }
+    public void setFixedCost(Boolean fixedCost) { this.fixedCost = fixedCost; }
 }

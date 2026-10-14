@@ -141,6 +141,11 @@ public class Budget {
         return count == 0 ? (double) day / month.lengthOfMonth() : sum / count;
     }
 
+    /** Spending other than fixed costs from the 1st through {@code day} of a month. */
+    public long variableSpentThrough(YearMonth month, int day) {
+        return flow.compute(month.atDay(1), month.atDay(Math.min(day, month.lengthOfMonth()))).variableSpent();
+    }
+
     /** Spending from the 1st through {@code day} of a month (clamped to its length). */
     public long spentThrough(YearMonth month, int day) {
         return flow.compute(month.atDay(1), month.atDay(Math.min(day, month.lengthOfMonth()))).spent();

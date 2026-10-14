@@ -1,5 +1,5 @@
 import { get, patch, del } from '../api.js';
-import { h, clear, sheet, toast, field, busy, confirmSheet } from '../ui.js';
+import { h, clear, sheet, toast, field, busy, confirmSheet, logoAvatar } from '../ui.js';
 import { money, dayLabel, monthLabel, shiftMonth, thisMonth, parseMoney, centsToInput } from '../fmt.js';
 
 let categoriesCache = null;
@@ -97,7 +97,7 @@ export function txnRow(t, app, onChange) {
   if (t.paired) meta.push('transfer');
   if (t.categorySource === 'MANUAL') meta.push('set by you');
   return h('button', { class: 'row', onclick: () => editTxn(t, onChange) },
-    h('div', { class: 'avatar' }, t.categoryIcon || '❔'),
+    logoAvatar(t.logo, t.categoryIcon || '❔'),
     h('div', { class: 'main' },
       h('div', { class: 'title' }, t.merchant || t.description),
       h('div', { class: 'meta' }, `${t.categoryName || 'No category'} · ${meta.join(' · ')}`)),

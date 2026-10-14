@@ -66,7 +66,9 @@ public class CategoryController {
         return categories.findAllByOrderBySortOrderAscNameAsc().stream().map(CategoryView::of).toList();
     }
 
-    public record CategoryBody(@NotBlank String name, @NotNull CategoryKind kind, String icon) {
+    /** @param earnedIncome income kind: counts as income; defaults to yes for a new income category */
+    public record CategoryBody(@NotBlank String name, @NotNull CategoryKind kind, String icon, Boolean earnedIncome,
+            Boolean fixedCost) {
     }
 
     @PostMapping("/categories")
@@ -77,8 +79,11 @@ public class CategoryController {
                 throw new IllegalArgumentException("There is already a category called " + body.name().trim());
             }
             int order = categories.findAll().stream().mapToInt(Category::getSortOrder).max().orElse(0) + 1;
-            return CategoryView.of(categories.save(new Category(body.name().trim(), body.kind(),
-                    ReferenceData.colorFor(body.kind()), blankToNull(body.icon()), order)));
+            Category c = new Category(body.name().trim(), body.kind(), ReferenceData.colorFor(body.kind()),
+                    blankToNull(body.icon()), order);
+            c.setEarnedIncome(body.kind() == CategoryKind.INCOME && !Boolean.FALSE.equals(body.earnedIncome()));
+            c.setFixedCost(body.kind() == CategoryKind.EXPENSE && Boolean.TRUE.equals(body.fixedCost()));
+            return CategoryView.of(categories.save(c));
         });
     }
 
@@ -95,6 +100,12 @@ public class CategoryController {
             }
             if (body.icon() != null) {
                 c.setIcon(blankToNull(body.icon()));
+            }
+            if (body.earnedIncome() != null) {
+                c.setEarnedIncome(c.getKind() == CategoryKind.INCOME && body.earnedIncome());
+            }
+            if (body.fixedCost() != null) {
+                c.setFixedCost(c.getKind() == CategoryKind.EXPENSE && body.fixedCost());
             }
             return CategoryView.of(c);
         });

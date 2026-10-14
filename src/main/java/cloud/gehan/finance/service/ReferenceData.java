@@ -1,6 +1,8 @@
 package cloud.gehan.finance.service;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +36,7 @@ public class ReferenceData implements ApplicationRunner {
     public static final String PAYCHECK = "Paycheck";
     public static final String INTEREST = "Interest & Dividends";
     public static final String OTHER_INCOME = "Other Income";
+    public static final String SIDE_INCOME = "Side Income";
     public static final String UNCATEGORIZED = "Uncategorized";
     public static final String REFUNDS = "Refunds & Credits";
     public static final String SAVINGS = "Savings";
@@ -58,6 +61,7 @@ public class ReferenceData implements ApplicationRunner {
 
     static final List<Seed> CATEGORIES = List.of(
             new Seed(PAYCHECK, CategoryKind.INCOME, "💼"),
+            new Seed(SIDE_INCOME, CategoryKind.INCOME, "🧰"),
             new Seed(INTEREST, CategoryKind.INCOME, "🏦"),
             new Seed(OTHER_INCOME, CategoryKind.INCOME, "💵"),
             new Seed("Housing", CategoryKind.EXPENSE, "🏠"),
@@ -116,7 +120,8 @@ public class ReferenceData implements ApplicationRunner {
             new RuleSeed("Gas", AmountSign.ANY, "SHELL", "EXXON", "EXXONMOBIL", "MOBIL", "CHEVRON", "SUNOCO", "BP",
                     "WAWA", "SHEETZ", "CITGO", "SPEEDWAY", "QUICK CHEK", "VALERO"),
             new RuleSeed("Shopping", AmountSign.ANY, "AMAZON", "AMZN", "TARGET", "WALMART", "BEST BUY", "ETSY",
-                    "EBAY", "APPLE STORE", "IKEA", "TJ MAXX", "TJMAXX", "MARSHALLS", "NORDSTROM", "MACY", "KOHL"),
+                    "EBAY", "APPLE STORE", "IKEA", "TJ MAXX", "TJMAXX", "MARSHALLS", "NORDSTROM", "MACY", "KOHL",
+                    "HOME DEPOT", "LOWE"),
             new RuleSeed("Utilities", AmountSign.OUT, "VERIZON", "AT&T", "COMCAST", "XFINITY", "PSE&G", "CON ED",
                     "CONEDISON", "T-MOBILE", "SPECTRUM", "OPTIMUM", "NATIONAL GRID", "JCP&L", "DUKE ENERGY",
                     "ELECTRIC", "WATER", "SEWER"),
@@ -124,11 +129,13 @@ public class ReferenceData implements ApplicationRunner {
                     "HOSPITAL", "QUEST DIAG", "LABCORP", "URGENT CARE"),
             new RuleSeed("Insurance", AmountSign.OUT, "GEICO", "STATE FARM", "PROGRESSIVE", "ALLSTATE", "LIBERTY MUTUAL",
                     "LEMONADE", "INSURANCE"),
-            new RuleSeed("Housing", AmountSign.OUT, "RENT", "MORTGAGE", "HOA", "HOME DEPOT", "LOWE"),
+            // Housing is a fixed cost (the same every month), so only rent-like things belong here.
+            new RuleSeed("Housing", AmountSign.OUT, "RENT", "MORTGAGE", "HOA"),
             new RuleSeed("Entertainment", AmountSign.ANY, "STEAM", "TICKETMASTER", "STUBHUB", "AMC", "REGAL",
                     "PLAYSTATION", "XBOX", "NINTENDO", "SEATGEEK"),
             new RuleSeed("Travel", AmountSign.ANY, "AIRLINES", "DELTA AIR", "UNITED AIRLINES", "AMERICAN AIR",
-                    "JETBLUE", "SOUTHWEST", "MARRIOTT", "HILTON", "HYATT", "AIRBNB", "EXPEDIA", "BOOKING.COM", "VRBO"),
+                    "JETBLUE", "SOUTHWEST", "MARRIOTT", "HILTON", "HYATT", "AIRBNB", "EXPEDIA", "BOOKING.COM", "VRBO",
+                    "RENT-A-CAR", "RENT A CAR", "HERTZ", "AVIS", "ENTERPRISE RENT", "BUDGET RENT"),
             new RuleSeed("Personal Care", AmountSign.ANY, "SALON", "BARBER", "SEPHORA", "ULTA", "SPA"),
             new RuleSeed("Gifts & Donations", AmountSign.OUT, "DONATION", "GOFUNDME", "CHARITY"),
             new RuleSeed("Fees & Interest", AmountSign.OUT, "FEE", "INTEREST CHARGE", "LATE FEE", "OVERDRAFT",
@@ -140,16 +147,76 @@ public class ReferenceData implements ApplicationRunner {
     private final CategoryRepository categories;
     private final CategoryRuleRepository rules;
     private final TransactionTemplate tx;
+    private final RuleService ruleService;
 
-    public ReferenceData(CategoryRepository categories, CategoryRuleRepository rules, TransactionTemplate tx) {
+    public ReferenceData(CategoryRepository categories, CategoryRuleRepository rules, TransactionTemplate tx,
+            RuleService ruleService) {
         this.categories = categories;
         this.rules = rules;
         this.tx = tx;
+        this.ruleService = ruleService;
     }
+
+    /** Earned income: what "income" means everywhere in the app. */
+    static final Set<String> EARNED = Set.of(PAYCHECK, SIDE_INCOME);
+    /** The same every month; left out of month-to-month comparisons. */
+    static final Set<String> FIXED = Set.of("Housing", "Loans");
 
     @Override
     public void run(ApplicationArguments args) {
-        tx.executeWithoutResult(s -> seed());
+        tx.executeWithoutResult(s -> {
+            seed();
+            upgrade();
+        });
+    }
+
+    /**
+     * Brings a database from an earlier version up to date: categories that
+     * predate the earned-income and fixed-cost flags get them from their name,
+     * and Side Income is added if missing. Choices already made are left alone.
+     */
+    void upgrade() {
+        if (categories.findByNameIgnoreCase(SIDE_INCOME).isEmpty()) {
+            Category side = new Category(SIDE_INCOME, CategoryKind.INCOME, colorFor(CategoryKind.INCOME), "🧰", 1);
+            side.setEarnedIncome(true);
+            categories.save(side);
+        }
+        for (Category c : categories.findAll()) {
+            if (c.getEarnedIncome() == null) {
+                c.setEarnedIncome(c.getKind() == CategoryKind.INCOME && EARNED.contains(c.getName()));
+            }
+            if (c.getFixedCost() == null) {
+                c.setFixedCost(c.getKind() == CategoryKind.EXPENSE && FIXED.contains(c.getName()));
+            }
+        }
+
+        // Housing became a fixed cost, so the built-in rules that sent home-improvement
+        // stores there move to Shopping, and car rentals (which "RENT" caught) get their own.
+        boolean changed = false;
+        Category shopping = categories.findByNameIgnoreCase("Shopping").orElse(null);
+        Category travel = categories.findByNameIgnoreCase("Travel").orElse(null);
+        List<CategoryRule> all = rules.findAll();
+        for (CategoryRule r : all) {
+            if (shopping != null && r.getPriority() == BUILT_IN_PRIORITY && "Housing".equals(r.getCategory().getName())
+                    && (r.getPattern().equals("HOME DEPOT") || r.getPattern().equals("LOWE"))) {
+                r.setCategory(shopping);
+                changed = true;
+            }
+        }
+        if (travel != null) {
+            Set<String> have = new HashSet<>();
+            all.forEach(r -> have.add(r.getPattern()));
+            for (String p : List.of("RENT-A-CAR", "RENT A CAR", "HERTZ", "AVIS", "ENTERPRISE RENT", "BUDGET RENT")) {
+                if (!have.contains(p)) {
+                    rules.save(new CategoryRule(p, travel, AmountSign.ANY, null, BUILT_IN_PRIORITY));
+                    changed = true;
+                }
+            }
+        }
+        if (changed) {
+            rules.flush();
+            ruleService.reapply();
+        }
     }
 
     void seed() {

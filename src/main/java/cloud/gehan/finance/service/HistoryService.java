@@ -63,8 +63,9 @@ public class HistoryService {
      * @param keptCents take-home minus spending
      * @param netWorthChangePercent from the end of the previous month to the end of this one (or today)
      * @param leftToSpendCents the current month only: what is still spendable after the savings target
+     * @param covered the whole month is inside the transaction history (the first month usually isn't)
      */
-    public record MonthScore(String month, boolean current, long incomeCents, long spentCents, long keptCents,
+    public record MonthScore(String month, boolean current, boolean covered, long incomeCents, long spentCents, long keptCents,
             Long savingsTargetCents, Double savingsRate, Long netWorthStartCents, Long netWorthEndCents,
             Double netWorthChangePercent, Long leftToSpendCents, int score, String grade, List<Part> parts) {
     }
@@ -143,7 +144,8 @@ public class HistoryService {
         parts.add(new Part("Net worth", (int) Math.round(NET_WORTH_POINTS * worthRatio), NET_WORTH_POINTS,
                 changePct == null ? "Not enough balance history yet" : String.format("%+.1f%% over the month", changePct)));
 
-        // Steady: spending against the three months before. Mid-month the comparison
+        // Steady: spending other than fixed costs (rent, loans) against the three
+        // months before. Mid-month the comparison
         // is like for like: the 1st to today now, against the 1st to the same day then.
         long prior = 0;
         int priorCount = 0;
@@ -152,8 +154,8 @@ public class HistoryService {
             if (!budget.covered(p)) {
                 continue;
             }
-            long pSpent = current ? budget.spentThrough(p, plan.dayOfMonth())
-                    : breakdowns.computeIfAbsent(p, flow::month).spent();
+            long pSpent = current ? budget.variableSpentThrough(p, plan.dayOfMonth())
+                    : breakdowns.computeIfAbsent(p, flow::month).variableSpent();
             if (pSpent > 0) {
                 prior += pSpent;
                 priorCount++;
@@ -165,7 +167,7 @@ public class HistoryService {
             steadyRatio = 1;
             steadyDetail = "No earlier months to compare with";
         } else {
-            double ratio = spent / ((double) prior / priorCount);
+            double ratio = b.variableSpent() / ((double) prior / priorCount);
             steadyRatio = clamp((1.25 - ratio) / 0.25);
             steadyDetail = String.format("%s%.0f%% vs your last 3 months%s", ratio >= 1 ? "+" : "−",
                     Math.abs(ratio - 1) * 100, current ? " at this point" : "");
@@ -173,7 +175,7 @@ public class HistoryService {
         parts.add(new Part("Steady", (int) Math.round(STEADY_POINTS * steadyRatio), STEADY_POINTS, steadyDetail));
 
         int score = parts.stream().mapToInt(Part::points).sum();
-        return new MonthScore(m.toString(), current, income, spent, kept, target,
+        return new MonthScore(m.toString(), current, budget.covered(m), income, spent, kept, target,
                 income > 0 ? (double) kept / income : null, start, end, changePct,
                 current ? plan.leftToSpendCents() : null, score, grade(score), parts);
     }
@@ -210,10 +212,15 @@ public class HistoryService {
         NavigableMap<LocalDate, Long> worth = netWorth.daily(m.atDay(1).minusDays(1), m.atEndOfMonth());
         MonthScore score = score(m, breakdowns, worth);
         FlowService.Breakdown b = breakdowns.get(m);
-        FlowService.Breakdown previous = breakdowns.computeIfAbsent(m.minusMonths(1), flow::month);
+        // Like for like: a month in progress is compared with the same days of the month before.
+        YearMonth p = m.minusMonths(1);
+        FlowService.Breakdown previous = score.current()
+                ? flow.compute(p.atDay(1), p.atDay(Math.min(budget.plan(m, b).dayOfMonth(), p.lengthOfMonth())))
+                : breakdowns.computeIfAbsent(p, flow::month);
         Map<Long, Long> before = new HashMap<>();
         previous.expenses().forEach((k, v) -> before.put(k.categoryId(), v));
-        List<CategoryChange> categories = b.expenses().entrySet().stream().limit(6)
+        // Rent and loans are the same every month; the list is about what moved.
+        List<CategoryChange> categories = b.expenses().entrySet().stream().filter(e -> !e.getKey().fixed()).limit(5)
                 .map(e -> new CategoryChange(e.getKey().categoryId(), e.getKey().name(), e.getValue(),
                         before.getOrDefault(e.getKey().categoryId(), 0L)))
                 .toList();
@@ -253,7 +260,7 @@ public class HistoryService {
             long[] f = flows.computeIfAbsent(t.getDay(), d -> new long[2]);
             if (bucket.kind() == CategoryKind.EXPENSE) {
                 f[0] -= t.getAmountCents();
-            } else if (bucket.kind() == CategoryKind.INCOME) {
+            } else if (bucket.kind() == CategoryKind.INCOME && bucket.earned()) {
                 f[1] += t.getAmountCents();
             }
         }

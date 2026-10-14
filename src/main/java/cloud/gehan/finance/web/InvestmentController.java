@@ -3,6 +3,7 @@ package cloud.gehan.finance.web;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -78,26 +79,42 @@ public class InvestmentController {
         }
     }
 
+    /**
+     * @param dayChangeCents today's move across all positions, from yesterday's close
+     * @param dayChangePercent the same against yesterday's value of those positions
+     */
     public record InvestmentAccount(AccountView account, Long cashCents, List<HoldingView> holdings,
-            List<PlanView> plans) {
+            List<PlanView> plans, long dayChangeCents, Double dayChangePercent) {
     }
 
     @GetMapping
     public List<InvestmentAccount> list() {
-        LocalDate today = LocalDate.now(props.zoneId());
         List<InvestmentAccount> out = new ArrayList<>();
         for (Account a : accounts.findAll()) {
-            List<Holding> held = holdings.findByAccount(a);
-            List<RecurringBuy> plans = recurring.findByAccount(a);
             boolean investment = a.getType() == AccountType.BROKERAGE || a.getType() == AccountType.RETIREMENT;
-            if (!investment && held.isEmpty()) {
-                continue;
+            if (investment || !holdings.findByAccount(a).isEmpty()) {
+                out.add(view(a));
             }
-            out.add(new InvestmentAccount(AccountView.of(a), a.getCashCents(),
-                    held.stream().map(HoldingView::of).toList(),
-                    plans.stream().map(p -> PlanView.of(p, today)).toList()));
         }
         return out;
+    }
+
+    /** One account, for its own page. */
+    @GetMapping("/{accountId}")
+    public InvestmentAccount one(@PathVariable Long accountId) {
+        return view(accounts.findById(accountId).orElseThrow());
+    }
+
+    private InvestmentAccount view(Account a) {
+        LocalDate today = LocalDate.now(props.zoneId());
+        List<Holding> held = holdings.findByAccount(a).stream()
+                .sorted(Comparator.comparingLong(Holding::valueCents).reversed()).toList();
+        long dayChange = held.stream().mapToLong(Holding::dayChangeCents).sum();
+        long yesterday = held.stream().mapToLong(h -> h.valueCents() - h.dayChangeCents()).sum();
+        return new InvestmentAccount(AccountView.of(a), a.getCashCents(),
+                held.stream().map(HoldingView::of).toList(),
+                recurring.findByAccount(a).stream().map(p -> PlanView.of(p, today)).toList(),
+                dayChange, yesterday > 0 ? 100.0 * dayChange / yesterday : null);
     }
 
     public record HoldingBody(@NotBlank String symbol, double shares, Long costBasisCents) {

@@ -9,6 +9,7 @@ import * as activity from './views/activity.js';
 import * as accounts from './views/accounts.js';
 import * as history from './views/history.js';
 import * as plan from './views/plan.js';
+import * as investment from './views/investment.js';
 
 // Tabs first; the rest are screens reached from a tab, with a back button to it.
 const ROUTES = [
@@ -21,6 +22,7 @@ const ROUTES = [
   { path: 'goals', title: 'Goals', parent: 'home', view: { render: plan.goalsPage } },
   { path: 'paychecks', title: 'Paychecks', parent: 'flow', view: { render: plan.paychecksPage } },
   { path: 'rules', title: 'Rules', parent: 'activity', view: { render: plan.rulesPage } },
+  { path: 'investment', title: 'Investments', parent: 'accounts', view: investment },
 ];
 
 export const app = { me: null, rerender: () => {} };
@@ -60,6 +62,7 @@ async function render() {
     const el = await route.view.render(params, app);
     if (current !== token) return;
     clear(view).append(el);
+    if (el.dataset?.title) document.title = el.dataset.title;
     flushMount();
   } catch (e) {
     if (current !== token) return;

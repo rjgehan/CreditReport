@@ -30,45 +30,44 @@ export async function render(params, app) {
 
 function recapCard(r) {
   const s = r.score;
+  const head = h('div', { class: 'recap-head' },
+    h('span', { class: 'name' }, monthLabel(s.month) + (s.current ? ' so far' : '')),
+    r.empty ? null : h('span', { class: 'score' }, h('span', { class: 'num' }, String(s.score)),
+      h('span', { class: 'grade grade-' + s.grade }, s.grade)));
   if (r.empty) {
-    return h('section', { class: 'card recap' },
-      h('div', { class: 'month-head' }, h('span', { class: 'name' }, monthLabel(s.month))),
-      h('div', { class: 'empty' }, 'Nothing came in or went out this month, so there is nothing to score.'));
+    return h('section', { class: 'card recap' }, head, h('div', { class: 'empty' }, 'No activity this month.'));
   }
-  const kept = privacy.on
-    ? (s.savingsRate === null ? '' : `Kept ${pct(s.savingsRate)} of take-home`)
-    : `Kept ${money(s.keptCents)}${s.savingsTargetCents ? ' of ' + money(s.savingsTargetCents) + ' target' : ''}`;
-  const worth = s.netWorthChangePercent === null ? null : `Net worth ${signed(s.netWorthChangePercent)}`;
+  const facts = [];
+  if (privacy.on) {
+    if (s.savingsRate !== null) facts.push(`Kept ${pct(s.savingsRate)}`);
+  } else {
+    facts.push(`Kept ${money(s.keptCents)}`);
+  }
+  if (s.netWorthChangePercent !== null) facts.push(`Net worth ${signed(s.netWorthChangePercent)}`);
 
-  const card = h('section', { class: 'card recap' },
-    h('div', { class: 'month-head' },
-      h('span', { class: 'name' }, monthLabel(s.month) + (s.current ? ' so far' : '')),
-      h('span', { class: 'day' }, 'Score')),
-    h('div', { class: 'recap-top' },
-      h('div', { class: 'recap-lines' },
-        h('div', { class: 'recap-line' }, kept),
-        worth ? h('div', { class: 'recap-line quiet' }, worth) : null),
-      h('div', { class: 'score' }, h('span', { class: 'num' }, String(s.score)), h('span', { class: 'grade grade-' + s.grade }, s.grade))));
-
+  // The four parts of the score as bars; the sentence behind each is in its tooltip.
   const parts = h('div', { class: 'parts' });
   for (const p of s.parts) {
-    parts.append(h('div', { class: 'part' },
+    const f = p.points / p.outOf;
+    parts.append(h('div', { class: 'part', title: p.detail },
       h('div', { class: 'part-line' }, h('span', { class: 'name' }, p.name), h('span', { class: 'pts' }, `${p.points}/${p.outOf}`)),
-      meter(p.points / p.outOf, p.points / p.outOf >= 0.75 ? 'ok' : p.points / p.outOf >= 0.4 ? 'watch' : 'over', null, 'xs'),
-      h('div', { class: 'part-detail' }, p.detail)));
+      meter(f, f >= 0.75 ? 'ok' : f >= 0.4 ? 'watch' : 'over', null, 'xs')));
   }
-  card.append(parts);
 
+  const card = h('section', { class: 'card recap' }, head, h('div', { class: 'recap-facts' }, facts.join(' · ')), parts);
   if (r.categories.length) {
-    const list = h('div', { class: 'recap-cats' }, h('div', { class: 'sub-head' }, 'Biggest spending'));
-    for (const c of r.categories.slice(0, 5)) {
+    const list = h('div', { class: 'recap-cats' });
+    for (const c of r.categories) {
       const delta = c.cents - c.previousCents;
-      const deltaText = c.previousCents === 0 ? 'new' : delta === 0 ? 'same'
-        : privacy.on ? signed(100 * delta / c.previousCents) : money(delta, { sign: true });
-      list.append(h('a', { class: 'cat-row', href: `#/activity?category=${c.categoryId ?? 'none'}&month=${s.month}` },
-        h('span', { class: 'name' }, c.name),
-        h('span', { class: 'amt' }, money(c.cents)),
-        h('span', { class: 'delta ' + (delta > 0 ? 'down' : 'up') }, deltaText)));
+      const dir = c.previousCents === 0 || delta === 0 ? '' : delta > 0 ? 'more' : 'less';
+      const change = c.previousCents === 0 ? 'new'
+        : delta === 0 ? 'same'
+          : privacy.on ? `${Math.abs(100 * delta / c.previousCents).toFixed(0)}%` : money(Math.abs(delta));
+      list.append(h('a', { class: 'cat-row', href: `#/activity?category=${c.categoryId ?? 'none'}&month=${s.month}`,
+        'aria-label': `${c.name} ${money(c.cents)}, ${dir ? (dir === 'more' ? 'up ' : 'down ') + change : change} from the month before` },
+      h('span', { class: 'name' }, c.name),
+      h('span', { class: 'amt' }, money(c.cents)),
+      h('span', { class: 'delta ' + dir }, dir ? h('span', { class: 'arrow', 'aria-hidden': 'true' }, dir === 'more' ? '▲' : '▼') : null, change)));
     }
     card.append(list);
   }
@@ -94,16 +93,16 @@ function calendarCard(months, calendar, calMonth, view, go) {
     h('button', { 'aria-label': 'Previous month', onclick: () => go({ cal: shiftMonth(calMonth, -1) }) }, '‹'),
     h('span', null, monthLabel(calMonth, true)),
     h('button', { 'aria-label': 'Next month', disabled: calMonth >= thisMonth(), onclick: () => go({ cal: shiftMonth(calMonth, 1) }) }, '›'));
-  card.append(h('div', { class: 'cal-head' }, nav, toggle));
-
   const days = calendar.days;
   const known = days.filter((d) => d.changePercent !== null);
   const monthChange = calendar.changePercent;
   const max = Math.max(0.05, ...known.map((d) => Math.abs(d.changePercent)));
+  card.append(h('div', { class: 'cal-head' }, nav, toggle));
 
-  const detail = h('div', { class: 'cal-detail' },
-    monthChange === null ? 'No balance history for this month yet.'
-      : `${signed(monthChange)} for the month. Tap a day for details.`);
+  // The month's change until a day is tapped, then that day's.
+  const monthLine = () => (monthChange === null ? []
+    : [h('span', { class: 'cal-total ' + (monthChange >= 0 ? 'up' : 'down') }, signed(monthChange)), ' this month']);
+  const detail = h('div', { class: 'cal-detail' }, monthLine());
   const grid = h('div', { class: 'cal-grid', role: 'grid', 'aria-label': 'Daily net worth change' });
   for (const w of ['S', 'M', 'T', 'W', 'T', 'F', 'S']) grid.append(h('div', { class: 'cal-dow' }, w));
   const offset = parseDay(days[0].day).getDay();
@@ -163,18 +162,11 @@ function monthList(months, selected, go) {
     return card;
   }
   for (const m of months) {
-    let kept;
-    if (m.current && m.leftToSpendCents !== null) {
-      kept = privacy.on ? '' : `${money(Math.max(0, m.leftToSpendCents))} left`;
-    } else if (privacy.on) {
-      kept = m.savingsRate === null ? '' : `kept ${pct(m.savingsRate)}`;
-    } else {
-      kept = `kept ${money(m.keptCents)}`;
-    }
+    const worth = m.netWorthChangePercent === null ? '' : signed(m.netWorthChangePercent);
     card.append(h('button', { class: 'month-row' + (m.month === selected ? ' on' : ''), type: 'button',
       onclick: () => { go({ month: m.month }); } },
     h('span', { class: 'name' }, monthLabel(m.month) + (m.current ? ' so far' : '')),
-    h('span', { class: 'meta' }, kept),
+    h('span', { class: 'meta ' + (m.netWorthChangePercent >= 0 ? 'up' : 'down') }, worth),
     h('span', { class: 'score-sm' }, String(m.score), h('span', { class: 'grade grade-' + m.grade }, m.grade))));
   }
   return card;

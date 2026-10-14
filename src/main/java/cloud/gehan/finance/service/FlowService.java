@@ -38,7 +38,11 @@ public class FlowService {
     }
 
     /** A category, or a stand-in for transactions that have none. */
-    public record Bucket(Long categoryId, String name, String icon, CategoryKind kind) {
+    /**
+     * @param earned income kind: counts as income (work, side hustles), not interest or stray deposits
+     * @param fixed expense kind: the same every month (rent, loans)
+     */
+    public record Bucket(Long categoryId, String name, String icon, CategoryKind kind, boolean earned, boolean fixed) {
     }
 
     /** One employer's paychecks in the period, expanded from net back to gross. */
@@ -73,6 +77,11 @@ public class FlowService {
         public long grossIncome() {
             return income.values().stream().mapToLong(Long::longValue).sum()
                     + pay.stream().mapToLong(p -> p.gross() + p.match()).sum();
+        }
+
+        /** Spending outside the fixed costs (rent, loans): the part that actually varies. */
+        public long variableSpent() {
+            return expenses.entrySet().stream().filter(e -> !e.getKey().fixed()).mapToLong(Map.Entry::getValue).sum();
         }
 
         public long spent() {
@@ -153,6 +162,11 @@ public class FlowService {
                 }
                 case EXPENSE -> expenses.merge(bucket, -amount, Long::sum);
                 case INCOME -> {
+                    // Interest, dividends and stray deposits are money in, but not income:
+                    // income means what work pays, so the numbers describe a working month.
+                    if (!bucket.earned()) {
+                        continue;
+                    }
                     Paystub stub = ReferenceData.PAYCHECK.equals(bucket.name()) && amount > 0
                             ? stubFor(t, stubs, stubPatterns) : null;
                     if (stub != null) {
@@ -195,11 +209,11 @@ public class FlowService {
     static Bucket bucket(Transaction t) {
         Category c = t.getCategory();
         if (c != null) {
-            return new Bucket(c.getId(), c.getName(), c.getIcon(), c.getKind());
+            return new Bucket(c.getId(), c.getName(), c.getIcon(), c.getKind(), c.isEarnedIncome(), c.isFixedCost());
         }
         return t.getAmountCents() > 0
-                ? new Bucket(null, ReferenceData.OTHER_INCOME, "💵", CategoryKind.INCOME)
-                : new Bucket(null, ReferenceData.UNCATEGORIZED, "❔", CategoryKind.EXPENSE);
+                ? new Bucket(null, ReferenceData.OTHER_INCOME, "💵", CategoryKind.INCOME, false, false)
+                : new Bucket(null, ReferenceData.UNCATEGORIZED, "❔", CategoryKind.EXPENSE, false, false);
     }
 
     private static Map<Bucket, Long> sortDesc(Map<Bucket, Long> map) {

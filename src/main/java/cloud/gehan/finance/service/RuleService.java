@@ -55,7 +55,9 @@ public class RuleService {
      * "STARBUCKS STORE", or the merchant name when the provider gave one.
      */
     public static String suggestPattern(Transaction t) {
-        if (t.getMerchant() != null && !t.getMerchant().isBlank()) {
+        // A payment to a person: the rule is about that person, not every Venmo or Zelle.
+        boolean person = ReferenceData.PEOPLE_WORDS.stream().anyMatch(w -> WordMatch.of(w).in(t.matchText()));
+        if (!person && t.getMerchant() != null && !t.getMerchant().isBlank()) {
             return t.getMerchant().trim().toUpperCase(Locale.ROOT);
         }
         String text = t.getDescription().toUpperCase(Locale.ROOT)
@@ -64,7 +66,7 @@ public class RuleService {
                 .replaceAll("\\s+", " ")
                 .trim();
         String[] words = text.split(" ");
-        String pattern = String.join(" ", java.util.Arrays.copyOf(words, Math.min(words.length, 3))).trim();
+        String pattern = String.join(" ", java.util.Arrays.copyOf(words, Math.min(words.length, person ? 5 : 3))).trim();
         return pattern.isEmpty() ? t.getDescription().trim().toUpperCase(Locale.ROOT) : pattern;
     }
 }

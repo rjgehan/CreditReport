@@ -51,6 +51,7 @@ const ICONS = {
   warn: 'M12 3 2 20h20zM12 10v4M12 17h.01',
   calendar: 'M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM4 10h16M8 2v4M16 2v4',
   back: 'M15 6l-6 6 6 6',
+  check: 'M5 12.5l4.5 4.5L19 7.5',
 };
 
 export function icon(name, size) {

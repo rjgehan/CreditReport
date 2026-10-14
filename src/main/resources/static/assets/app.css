@@ -242,6 +242,19 @@ button.row, a.row, .row.tap { cursor: pointer; width: 100%; text-align: left; ba
 .row .amount { font-weight: 600; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .row .amount.in { color: var(--good-ink); }
 .row .amount .meta { font-weight: 400; }
+.row .amount.muted { color: var(--ink-3); font-weight: 500; }
+
+/* Activity rows: a check to tick off, then the rest of the row opens the transaction. */
+.row.txn { padding: 0 16px 0 2px; gap: 0; }
+.check-btn { width: 44px; min-height: 52px; flex: none; display: grid; place-items: center; background: none; border: 0; padding: 0; cursor: pointer; color: var(--surface); }
+.check-btn .ring { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--ink-3); display: grid; place-items: center; }
+.check-btn svg { opacity: 0; }
+.row.txn.done .check-btn .ring { background: var(--good); border-color: var(--good); }
+.row.txn.done .check-btn svg { opacity: 1; stroke-width: 3; }
+.txn-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 11px 0 11px 2px; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.txn-open:hover .title { text-decoration: underline; text-decoration-color: var(--axis); }
+.row .meta .needs { color: var(--warning-ink); font-weight: 600; }
+.list > .row.txn:first-child { border-top: 0; }
 .date-head { padding: 14px 16px 6px; font-size: 13px; font-weight: 600; color: var(--ink-3); background: var(--surface-2); border-top: 1px solid var(--hairline); }
 .list > .date-head:first-child { border-top: 0; }
 

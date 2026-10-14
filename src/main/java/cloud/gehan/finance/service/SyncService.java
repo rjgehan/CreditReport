@@ -182,6 +182,7 @@ public class SyncService {
         }
 
         List<Transaction> touched = new ArrayList<>();
+        List<Transaction> inserted = new ArrayList<>();
         Map<Account, Set<String>> seenPending = new HashMap<>();
         LocalDate earliest = today;
         for (TxnData t : result.transactions()) {
@@ -191,7 +192,8 @@ public class SyncService {
             }
             Transaction txn = txns.findByAccountAndExternalId(account, t.externalId())
                     .orElseGet(() -> new Transaction(account, t.externalId(), t.day(), t.amountCents(), t.description()));
-            boolean changed = txn.getId() == null
+            boolean isNew = txn.getId() == null;
+            boolean changed = isNew
                     || txn.getAmountCents() != t.amountCents()
                     || !Objects.equals(txn.getDescription(), t.description())
                     || !Objects.equals(txn.getProviderCategory(), t.providerCategory());
@@ -204,6 +206,9 @@ public class SyncService {
             txn = txns.save(txn);
             if (changed) {
                 touched.add(txn);
+            }
+            if (isNew && !t.pending()) {
+                inserted.add(txn);
             }
             if (t.pending()) {
                 seenPending.computeIfAbsent(account, k -> new HashSet<>()).add(t.externalId());
@@ -233,6 +238,7 @@ public class SyncService {
                 }
             }
         }
+        carryOver(doomed, inserted);
         delete(doomed);
 
         categorizer.categorize(touched);
@@ -243,6 +249,49 @@ public class SyncService {
         c.setLastSyncedAt(Instant.now());
         c.setStatus(ConnectionStatus.OK);
         c.setLastError(result.warnings().isEmpty() ? null : String.join("; ", result.warnings()));
+    }
+
+    /**
+     * A pending charge comes back posted under a new id (often with a tip added). What you
+     * did to the pending one (checked it off, picked its category, wrote a note) moves to
+     * the posted one: same account, same direction, within a few days and a quarter of the amount.
+     */
+    static void carryOver(List<Transaction> doomed, List<Transaction> posted) {
+        Set<Transaction> claimed = new HashSet<>();
+        for (Transaction p : doomed) {
+            boolean yours = p.isReviewed() || p.getCategorySource() == CategorySource.MANUAL || p.getNotes() != null;
+            if (!p.isPending() || !yours) {
+                continue;
+            }
+            Transaction best = null;
+            long bestScore = Long.MAX_VALUE;
+            for (Transaction n : posted) {
+                long days = java.time.temporal.ChronoUnit.DAYS.between(p.getDay(), n.getDay());
+                long diff = Math.abs(n.getAmountCents() - p.getAmountCents());
+                boolean close = Objects.equals(n.getAccount().getId(), p.getAccount().getId()) && !claimed.contains(n)
+                        && Long.signum(n.getAmountCents()) == Long.signum(p.getAmountCents())
+                        && days >= -1 && days <= 6 && diff <= Math.abs(p.getAmountCents()) / 4;
+                long score = diff * 10 + Math.abs(days);
+                if (close && score < bestScore) {
+                    best = n;
+                    bestScore = score;
+                }
+            }
+            if (best == null) {
+                continue;
+            }
+            claimed.add(best);
+            if (p.getCategorySource() == CategorySource.MANUAL && p.getCategory() != null) {
+                best.setCategory(p.getCategory());
+                best.setCategorySource(CategorySource.MANUAL);
+            }
+            if (p.isReviewed()) {
+                best.setReviewed(true);
+            }
+            if (best.getNotes() == null && p.getNotes() != null) {
+                best.setNotes(p.getNotes());
+            }
+        }
     }
 
     /** Deletes transactions and lets any transfer partner fall back to its own category. */

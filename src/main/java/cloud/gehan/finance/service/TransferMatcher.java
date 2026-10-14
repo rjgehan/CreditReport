@@ -74,7 +74,7 @@ public class TransferMatcher {
 
     /** A guess, or something already known to be a transfer. Never real spending or income. */
     static boolean pairable(Transaction t) {
-        if (t.getCategorySource() == CategorySource.DEFAULT || t.getCategory() == null) {
+        if (t.getCategorySource() == CategorySource.DEFAULT || t.getCategory() == null || waitingForYou(t)) {
             return true;
         }
         CategoryKind kind = t.getCategory().getKind();
@@ -122,17 +122,26 @@ public class TransferMatcher {
         };
     }
 
+    /**
+     * Filed by the built-in Venmo and Zelle rules to wait for you. A payment app moving money
+     * between your own accounts is still a transfer, so these pair like guesses do.
+     */
+    static boolean waitingForYou(Transaction t) {
+        return t.getCategorySource() == CategorySource.RULE && t.getCategory() != null
+                && (ReferenceData.UNCATEGORIZED.equals(t.getCategory().getName())
+                        || ReferenceData.OTHER_INCOME.equals(t.getCategory().getName()));
+    }
+
     /** Rules and you outrank the pairing; it only replaces guesses and generic transfers. */
     private static void assign(Transaction t, Category category) {
         if (category == null) {
             return;
         }
-        boolean guess = t.getCategorySource() == CategorySource.DEFAULT;
+        boolean guess = t.getCategorySource() == CategorySource.DEFAULT || waitingForYou(t);
         boolean genericTransfer = t.getCategorySource() == CategorySource.PROVIDER
                 && t.getCategory() != null && t.getCategory().getKind() == CategoryKind.TRANSFER;
         if (guess || genericTransfer || t.getCategory() == null) {
-            t.setCategory(category);
-            t.setCategorySource(CategorySource.TRANSFER_MATCH);
+            Categorizer.set(t, category, CategorySource.TRANSFER_MATCH);
         }
     }
 }

@@ -42,6 +42,8 @@ import cloud.gehan.finance.service.RuleService;
 import cloud.gehan.finance.service.StatementImporter;
 import cloud.gehan.finance.service.SyncService;
 import cloud.gehan.finance.web.Views.TxnView;
+import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -75,19 +77,101 @@ public class TransactionController {
         this.tx = tx;
     }
 
-    public record TxnPage(List<TxnView> items, long total, int page, int pages, long inCents, long outCents) {
+    /** @param toReview how many of the transactions these filters find you haven't checked off yet */
+    public record TxnPage(List<TxnView> items, long total, int page, int pages, long inCents, long outCents,
+            long toReview) {
     }
 
+    /** Not checked off yet. */
+    static final Specification<Transaction> UNREVIEWED = (root, query, cb) -> cb.or(cb.isNull(root.get("reviewed")),
+            cb.isFalse(root.get("reviewed")));
+
     /**
-     * @param category a category id, or "none" for transactions without one
+     * @param category a category id, or "none" for transactions without one (or in Uncategorized)
      * @param kind INCOME, EXPENSE, SAVINGS or TRANSFER
+     * @param review "todo" for only the ones you haven't checked off
      */
     @GetMapping("/transactions")
     public TxnPage list(@RequestParam(required = false) LocalDate from, @RequestParam(required = false) LocalDate to,
             @RequestParam(required = false) Long account, @RequestParam(required = false) String category,
             @RequestParam(required = false) String kind, @RequestParam(required = false) String q,
+            @RequestParam(required = false) String review,
+            @RequestParam(required = false) LocalDate beforeDay, @RequestParam(required = false) Long beforeId,
             @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "50") int size) {
-        Specification<Transaction> spec = (root, query, cb) -> {
+        Specification<Transaction> filters = filters(from, to, account, category, kind, q);
+        Specification<Transaction> spec = "todo".equals(review) ? filters.and(UNREVIEWED) : filters;
+        int pageSize = Math.max(1, Math.min(size, 200));
+        // "More" continues after the last row shown rather than at a page number, so rows
+        // checked off meanwhile (and gone from To review) don't make it skip any.
+        Specification<Transaction> after = beforeDay == null || beforeId == null ? spec
+                : spec.and((root, query, cb) -> cb.or(cb.lessThan(root.get("day"), beforeDay),
+                        cb.and(cb.equal(root.get("day"), beforeDay), cb.lessThan(root.get("id"), beforeId))));
+        Page<Transaction> result = txns.findAll(after,
+                PageRequest.of(Math.max(page, 0), pageSize, Sort.by(Sort.Order.desc("day"), Sort.Order.desc("id"))));
+        long in = 0;
+        long out = 0;
+        long total = 0;
+        for (Transaction t : txns.findAll(spec)) {
+            total++;
+            if (t.getAmountCents() > 0) {
+                in += t.getAmountCents();
+            } else {
+                out -= t.getAmountCents();
+            }
+        }
+        return new TxnPage(result.getContent().stream().map(TxnView::of).toList(), total,
+                result.getNumber(), result.getTotalPages(), in, out, txns.count(filters.and(UNREVIEWED)));
+    }
+
+    public record ReviewBody(@NotNull Boolean reviewed) {
+    }
+
+    /** Checks off (or un-checks) every transaction the same filters find. */
+    @PostMapping("/transactions/review")
+    public Map<String, Object> reviewAll(@RequestParam(required = false) LocalDate from,
+            @RequestParam(required = false) LocalDate to, @RequestParam(required = false) Long account,
+            @RequestParam(required = false) String category, @RequestParam(required = false) String kind,
+            @RequestParam(required = false) String q, @RequestBody @Valid ReviewBody body) {
+        int changed = tx.execute(s -> {
+            int n = 0;
+            for (Transaction t : txns.findAll(filters(from, to, account, category, kind, q))) {
+                if (t.isReviewed() != body.reviewed()) {
+                    t.setReviewed(body.reviewed());
+                    n++;
+                }
+            }
+            return n;
+        });
+        return Map.of("changed", changed);
+    }
+
+    /** Why a transaction is in its category, in words. */
+    public record Reason(String source, String text, Long ruleId, String rulePattern, boolean ruleBuiltIn) {
+    }
+
+    @GetMapping("/transactions/{id}/reason")
+    public Reason reason(@PathVariable Long id) {
+        return tx.execute(s -> {
+            Transaction t = txns.findById(id).orElseThrow();
+            CategorySource source = t.getCategorySource() == null ? CategorySource.DEFAULT : t.getCategorySource();
+            return switch (source) {
+                case MANUAL -> new Reason(source.name(), "You picked it", null, null, false);
+                case AI -> new Reason(source.name(), "Guessed by the iPhone shortcut", null, null, false);
+                case TRANSFER_MATCH -> new Reason(source.name(), "Matched with the other side of a transfer", null, null, false);
+                case RULE -> {
+                    CategoryRule r = categorizer.firstRule(t, categorizer.context());
+                    yield r == null ? new Reason(source.name(), "A rule", null, null, false)
+                            : new Reason(source.name(), (r.getPriority() < ReferenceData.USER_PRIORITY ? "Built-in rule: " : "Your rule: ")
+                                    + r.getPattern(), r.getId(), r.getPattern(), r.getPriority() < ReferenceData.USER_PRIORITY);
+                }
+                default -> new Reason(source.name(), "Nothing matched, so the account's default", null, null, false);
+            };
+        });
+    }
+
+    private static Specification<Transaction> filters(LocalDate from, LocalDate to, Long account, String category,
+            String kind, String q) {
+        return (root, query, cb) -> {
             List<Predicate> where = new ArrayList<>();
             if (from != null) {
                 where.add(cb.greaterThanOrEqualTo(root.get("day"), from));
@@ -101,7 +185,8 @@ public class TransactionController {
                 where.add(cb.isFalse(root.get("account").get("hidden")));
             }
             if ("none".equals(category)) {
-                where.add(cb.isNull(root.get("category")));
+                Join<Transaction, Category> c = root.join("category", JoinType.LEFT);
+                where.add(cb.or(cb.isNull(root.get("category")), cb.equal(c.get("name"), ReferenceData.UNCATEGORIZED)));
             } else if (category != null && !category.isBlank()) {
                 where.add(cb.equal(root.get("category").get("id"), Long.valueOf(category)));
             }
@@ -116,20 +201,6 @@ public class TransactionController {
             }
             return cb.and(where.toArray(new Predicate[0]));
         };
-        int pageSize = Math.max(1, Math.min(size, 200));
-        Page<Transaction> result = txns.findAll(spec,
-                PageRequest.of(Math.max(page, 0), pageSize, Sort.by(Sort.Order.desc("day"), Sort.Order.desc("id"))));
-        long in = 0;
-        long out = 0;
-        for (Transaction t : txns.findAll(spec)) {
-            if (t.getAmountCents() > 0) {
-                in += t.getAmountCents();
-            } else {
-                out -= t.getAmountCents();
-            }
-        }
-        return new TxnPage(result.getContent().stream().map(TxnView::of).toList(), result.getTotalElements(),
-                result.getNumber(), result.getTotalPages(), in, out);
     }
 
     /**
@@ -137,7 +208,7 @@ public class TransactionController {
      *        re-file every matching transaction you haven't picked by hand
      */
     public record TxnPatch(Long categoryId, Boolean clearCategory, String notes, Boolean ruleFromThis, String rulePattern,
-            LocalDate day, Long amountCents, String description) {
+            LocalDate day, Long amountCents, String description, Boolean reviewed) {
     }
 
     @PatchMapping("/transactions/{id}")
@@ -147,7 +218,11 @@ public class TransactionController {
             if (body.notes() != null) {
                 t.setNotes(body.notes().isBlank() ? null : body.notes().trim());
             }
-            if (t.getAccount().isManual()) {
+            if (body.reviewed() != null) {
+                t.setReviewed(body.reviewed());
+            }
+            // What you typed in yourself can be corrected; what a bank sent can't.
+            if (t.isEditable()) {
                 if (body.day() != null) {
                     t.setDay(body.day());
                 }
@@ -161,11 +236,14 @@ public class TransactionController {
             if (Boolean.TRUE.equals(body.clearCategory())) {
                 // Hand it back to the rules.
                 t.setCategorySource(CategorySource.DEFAULT);
+                t.setReviewed(false);
                 categorizer.categorize(List.of(t));
             } else if (body.categoryId() != null) {
                 Category c = categories.findById(body.categoryId()).orElseThrow();
                 t.setCategory(c);
                 t.setCategorySource(CategorySource.MANUAL);
+                // Picking a category is checking it off.
+                t.setReviewed(true);
                 if (Boolean.TRUE.equals(body.ruleFromThis())) {
                     String pattern = body.rulePattern() != null && !body.rulePattern().isBlank()
                             ? body.rulePattern() : RuleService.suggestPattern(t);
@@ -190,8 +268,9 @@ public class TransactionController {
     public TxnView create(@RequestBody @Valid NewTxn body) {
         return tx.execute(s -> {
             Account a = accounts.findById(body.accountId()).orElseThrow();
-            Transaction t = new Transaction(a, "manual:" + System.nanoTime(), body.day(), body.amountCents(),
+            Transaction t = new Transaction(a, Transaction.BY_HAND + System.nanoTime(), body.day(), body.amountCents(),
                     body.description().trim());
+            t.setReviewed(true);
             t.setNotes(body.notes());
             if (body.categoryId() != null) {
                 t.setCategory(categories.findById(body.categoryId()).orElseThrow());
@@ -208,7 +287,7 @@ public class TransactionController {
     public void delete(@PathVariable Long id) {
         tx.executeWithoutResult(s -> {
             Transaction t = txns.findById(id).orElseThrow();
-            if (!t.getAccount().isManual()) {
+            if (!t.isEditable()) {
                 throw new IllegalStateException("Synced transactions come back on the next sync; recategorize it as a Transfer instead.");
             }
             sync.delete(List.of(t));

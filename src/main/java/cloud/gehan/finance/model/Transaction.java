@@ -64,6 +64,9 @@ public class Transaction {
     @Column(length = 1000)
     private String notes;
 
+    /** You've looked at it and its category is right. Null on rows from before this existed. */
+    private Boolean reviewed;
+
     @Column(nullable = false)
     private Instant createdAt = Instant.now();
 
@@ -76,6 +79,20 @@ public class Transaction {
         this.day = day;
         this.amountCents = amountCents;
         this.description = description;
+    }
+
+    /** Typed in by you rather than sent by a bank. */
+    public static final String BY_HAND = "manual:";
+    /** A bill payment from before the bank history, put in on the Bills page. */
+    public static final String BILL_BACKFILL = BY_HAND + "bill:";
+
+    public boolean isByHand() {
+        return externalId != null && externalId.startsWith(BY_HAND);
+    }
+
+    /** Yours to correct or delete: typed in by you, or on an account you keep by hand. No bank will send it again. */
+    public boolean isEditable() {
+        return account.isManual() || isByHand();
     }
 
     /** Description and merchant together, which is what rules match against. */
@@ -107,4 +124,6 @@ public class Transaction {
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
     public Instant getCreatedAt() { return createdAt; }
+    public boolean isReviewed() { return Boolean.TRUE.equals(reviewed); }
+    public void setReviewed(boolean reviewed) { this.reviewed = reviewed; }
 }

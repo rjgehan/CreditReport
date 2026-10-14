@@ -109,6 +109,9 @@ public class ShortcutCategorizer {
         sb.append("\nFor each transaction, reply with one line: its number, a vertical bar, then the category.\n")
                 .append("Example: 123 | Groceries\n")
                 .append("Negative amounts are money spent; positive amounts are money received.\n")
+                .append("Use Dining only for restaurants, cafes, bars and food delivery you can recognise by name.\n")
+                .append("Payments to or from a person (Venmo, Zelle, Cash App, PayPal to a name) are always skip.\n")
+                .append("Skipping is better than guessing: skip anything you would have to guess.\n")
                 .append("If you are not sure, use: 123 | skip\n")
                 .append("Reply with those lines only, nothing else.\n\n")
                 .append("Transactions (number | date | amount | description):\n");
@@ -155,7 +158,7 @@ public class ShortcutCategorizer {
             for (Map.Entry<Long, Category> e : picks.entrySet()) {
                 Transaction t = txns.findById(e.getKey()).orElse(null);
                 // Re-checked inside the write: a sync or a hand edit may have filed it since.
-                if (t != null && t.getCategorySource() == CategorySource.DEFAULT) {
+                if (t != null && t.getCategorySource() == CategorySource.DEFAULT && !t.isReviewed()) {
                     t.setCategory(e.getValue());
                     t.setCategorySource(CategorySource.AI);
                     n++;
@@ -186,7 +189,9 @@ public class ShortcutCategorizer {
             }
             boolean guess = t.getCategorySource() == null || t.getCategorySource() == CategorySource.DEFAULT;
             boolean leftover = t.getCategory() == null || LEFTOVERS.contains(t.getCategory().getName());
-            if (guess && leftover && !t.isPending() && !t.getAccount().isHidden() && t.getPairedTxnId() == null) {
+            // Something you've checked off is right as it is; the model never second-guesses you.
+            if (guess && leftover && !t.isReviewed() && !t.isPending() && !t.getAccount().isHidden()
+                    && t.getPairedTxnId() == null) {
                 out.add(t);
             }
         }

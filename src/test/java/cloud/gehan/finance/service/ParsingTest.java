@@ -80,6 +80,31 @@ class ParsingTest {
     }
 
     @Test
+    void whatYouDidToAPendingChargeFollowsItWhenItPosts() {
+        cloud.gehan.finance.model.Account card = new cloud.gehan.finance.model.Account(null, "c1", "Card", AccountType.CREDIT_CARD);
+        cloud.gehan.finance.model.Category dining = new cloud.gehan.finance.model.Category("Dining",
+                cloud.gehan.finance.model.CategoryKind.EXPENSE, "#000", null, 0);
+        LocalDate day = LocalDate.of(2026, 10, 10);
+        cloud.gehan.finance.model.Transaction pending = new cloud.gehan.finance.model.Transaction(card, "p1", day, -4000, "JOES");
+        pending.setPending(true);
+        pending.setReviewed(true);
+        pending.setCategory(dining);
+        pending.setCategorySource(cloud.gehan.finance.model.CategorySource.MANUAL);
+        pending.setNotes("with Sam");
+        // The posted one has the tip on it; an unrelated bigger charge doesn't match.
+        cloud.gehan.finance.model.Transaction posted = new cloud.gehan.finance.model.Transaction(card, "x1", day.plusDays(2), -4800, "JOES");
+        cloud.gehan.finance.model.Transaction other = new cloud.gehan.finance.model.Transaction(card, "x2", day.plusDays(1), -20000, "STORE");
+
+        SyncService.carryOver(List.of(pending), List.of(other, posted));
+
+        assertThat(posted.isReviewed()).isTrue();
+        assertThat(posted.getCategory()).isSameAs(dining);
+        assertThat(posted.getCategorySource()).isEqualTo(cloud.gehan.finance.model.CategorySource.MANUAL);
+        assertThat(posted.getNotes()).isEqualTo("with Sam");
+        assertThat(other.isReviewed()).isFalse();
+    }
+
+    @Test
     void payRulesAreMoreThanOneStoreWord() {
         List<String> bofa = List.of("TARGET DES:PAYROLL ID:XXXXX12 INDN:DOE,JOHN CO ID:XXXXX34 PPD",
                 "TARGET DES:PAYROLL ID:XXXXX56 INDN:DOE,JOHN CO ID:XXXXX34 PPD");

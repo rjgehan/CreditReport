@@ -20,9 +20,12 @@ import cloud.gehan.finance.model.AppSetting;
 import cloud.gehan.finance.model.Category;
 import cloud.gehan.finance.model.CategoryKind;
 import cloud.gehan.finance.model.CategoryRule;
+import cloud.gehan.finance.model.CategorySource;
+import cloud.gehan.finance.model.Transaction;
 import cloud.gehan.finance.repo.AppSettingRepository;
 import cloud.gehan.finance.repo.CategoryRepository;
 import cloud.gehan.finance.repo.CategoryRuleRepository;
+import cloud.gehan.finance.repo.TransactionRepository;
 
 /**
  * The starting categories and the merchant rules that fill them. Seeded once into
@@ -34,8 +37,8 @@ public class ReferenceData implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(ReferenceData.class);
 
-    // Names the code relies on. Renaming one in the UI is fine; they are looked up
-    // by name only to seed and as fallbacks.
+    // Names the code files things under. The ones in REQUIRED can't be renamed, moved
+    // to another kind or deleted in the app, or defaults and transfers would lose their place.
     public static final String PAYCHECK = "Paycheck";
     public static final String INTEREST = "Interest & Dividends";
     public static final String OTHER_INCOME = "Other Income";
@@ -47,10 +50,16 @@ public class ReferenceData implements ApplicationRunner {
     public static final String RETIREMENT = "Retirement";
     public static final String CARD_PAYMENT = "Credit Card Payment";
     public static final String TRANSFER = "Transfer";
+    public static final String LOANS = "Loans";
+
+    public static final Set<String> REQUIRED = Set.of(PAYCHECK, OTHER_INCOME, UNCATEGORIZED, REFUNDS, SAVINGS, INVESTING,
+            RETIREMENT, CARD_PAYMENT, TRANSFER, LOANS);
 
     /** Built-in rules sit at priority 10; rules you add start at 100. */
     public static final int BUILT_IN_PRIORITY = 10;
     public static final int USER_PRIORITY = 100;
+    /** Payments to people outrank the other built-in rules: "ZELLE TO JOES PIZZA" is still a person. */
+    static final int PEOPLE_PRIORITY = 11;
 
     // Colour by what the money does, not by category: there are more categories
     // than a colour-blind-safe palette has hues, and every node is labelled.
@@ -117,7 +126,7 @@ public class ReferenceData implements ApplicationRunner {
                     "SPROUTS", "INSTACART", "H-E-B", "MARKET BASKET", "HANNAFORD", "COSTCO"),
             new RuleSeed("Dining", AmountSign.ANY, "STARBUCKS", "MCDONALD", "CHIPOTLE", "DOORDASH", "UBER EATS",
                     "UBEREATS", "GRUBHUB", "DUNKIN", "SWEETGREEN", "CHICK-FIL-A", "PANERA", "SHAKE SHACK", "TST",
-                    "SQ *", "RESTAURANT", "PIZZA", "CAFE", "COFFEE", "BAR & GRILL", "TACO BELL", "WENDY"),
+                    "RESTAURANT", "PIZZA", "CAFE", "COFFEE", "BAR & GRILL", "TACO BELL", "WENDY"),
             new RuleSeed("Transportation", AmountSign.ANY, "UBER", "LYFT", "E-ZPASS", "EZPASS", "PARKING", "MTA",
                     "NJ TRANSIT", "AMTRAK", "TOLL", "PARKMOBILE", "SPOTHERO"),
             new RuleSeed("Gas", AmountSign.ANY, "SHELL", "EXXON", "EXXONMOBIL", "MOBIL", "CHEVRON", "SUNOCO", "BP",
@@ -133,7 +142,8 @@ public class ReferenceData implements ApplicationRunner {
             new RuleSeed("Insurance", AmountSign.OUT, "GEICO", "STATE FARM", "PROGRESSIVE", "ALLSTATE", "LIBERTY MUTUAL",
                     "LEMONADE", "INSURANCE"),
             // Housing is a fixed cost (the same every month), so only rent-like things belong here.
-            new RuleSeed("Housing", AmountSign.OUT, "RENT", "MORTGAGE", "HOA"),
+            new RuleSeed("Housing", AmountSign.OUT, "RENT", "MORTGAGE", "HOA", "APPFOLIO", "RENTCAFE", "RENT CAFE",
+                    "YARDI", "BUILDIUM", "CLICKPAY", "PAYLEASE", "ZEGO", "BILT RENT", "RENT PAYMENT", "RENT PMT"),
             new RuleSeed("Entertainment", AmountSign.ANY, "STEAM", "TICKETMASTER", "STUBHUB", "AMC", "REGAL",
                     "PLAYSTATION", "XBOX", "NINTENDO", "SEATGEEK"),
             new RuleSeed("Travel", AmountSign.ANY, "AIRLINES", "DELTA AIR", "UNITED AIRLINES", "AMERICAN AIR",
@@ -145,26 +155,47 @@ public class ReferenceData implements ApplicationRunner {
                     "FINANCE CHARGE"),
             new RuleSeed("Taxes", AmountSign.OUT, "IRS", "TREAS TAX", "STATE TAX", "DMV"),
             new RuleSeed("Loans", AmountSign.OUT, "NELNET", "NAVIENT", "MOHELA", "AIDVANTAGE", "SALLIE MAE",
-                    "EDFINANCIAL", "LOAN PMT", "LOAN PAYMENT", "AUTO LOAN", "STUDENT LN"));
+                    "EDFINANCIAL", "LOAN PMT", "LOAN PAYMENT", "AUTO LOAN", "STUDENT LN", "STUDENT LOAN", "DEPT EDUCATION",
+                    "DEPT OF EDUCATION", "FEDLOAN"));
+
+    /**
+     * Venmo, Zelle and the like could be anything (dinner, rent, paying a friend back),
+     * so nothing guesses at them, the iPhone shortcut included. They wait for you.
+     */
+    public static final List<String> PEOPLE_WORDS = List.of("VENMO", "ZELLE", "CASH APP", "CASHAPP", "APPLE CASH");
+    static final List<RuleSeed> PEOPLE = List.of(
+            new RuleSeed(UNCATEGORIZED, AmountSign.OUT, PEOPLE_WORDS.toArray(String[]::new)),
+            new RuleSeed(OTHER_INCOME, AmountSign.IN, PEOPLE_WORDS.toArray(String[]::new)));
+
+    /** Built-in rules added after the first release, put into existing databases once. */
+    static final List<RuleSeed> ADDED_IN_3 = List.of(
+            new RuleSeed("Housing", AmountSign.OUT, "APPFOLIO", "RENTCAFE", "RENT CAFE", "YARDI", "BUILDIUM", "CLICKPAY",
+                    "PAYLEASE", "ZEGO", "BILT RENT", "RENT PAYMENT", "RENT PMT"),
+            new RuleSeed(LOANS, AmountSign.OUT, "STUDENT LOAN", "DEPT EDUCATION", "DEPT OF EDUCATION", "FEDLOAN"));
 
     private final CategoryRepository categories;
     private final CategoryRuleRepository rules;
     private final TransactionTemplate tx;
     private final RuleService ruleService;
     private final AppSettingRepository settings;
+    private final TransactionRepository txns;
 
     public ReferenceData(CategoryRepository categories, CategoryRuleRepository rules, TransactionTemplate tx,
-            RuleService ruleService, AppSettingRepository settings) {
+            RuleService ruleService, AppSettingRepository settings, TransactionRepository txns) {
         this.categories = categories;
         this.rules = rules;
         this.tx = tx;
         this.ruleService = ruleService;
         this.settings = settings;
+        this.txns = txns;
     }
 
     /** Bumped when rules start matching differently, so everything is filed again once. */
     static final String RULE_MATCHING = "rule-matching";
     static final String RULE_MATCHING_VERSION = "2";
+    /** Bumped when the built-in rules change in a way existing databases need. */
+    static final String BUILT_IN_RULES = "built-in-rules";
+    static final String BUILT_IN_RULES_VERSION = "3";
 
     /** Earned income: what "income" means everywhere in the app. */
     static final Set<String> EARNED = Set.of(PAYCHECK, SIDE_INCOME);
@@ -185,7 +216,8 @@ public class ReferenceData implements ApplicationRunner {
      * and Side Income is added if missing. Choices already made are left alone.
      */
     void upgrade() {
-        if (categories.findByNameIgnoreCase(SIDE_INCOME).isEmpty()) {
+        // Only for databases from before Side Income existed; after that, deleting it sticks.
+        if (setting(BUILT_IN_RULES) == null && categories.findByNameIgnoreCase(SIDE_INCOME).isEmpty()) {
             Category side = new Category(SIDE_INCOME, CategoryKind.INCOME, colorFor(CategoryKind.INCOME), "🧰", 1);
             side.setEarnedIncome(true);
             categories.save(side);
@@ -237,8 +269,32 @@ public class ReferenceData implements ApplicationRunner {
             }
         }
         // Rules now match across punctuation and numbers (WordMatch); deposits they missed get filed.
-        if (!RULE_MATCHING_VERSION.equals(settings.findById(RULE_MATCHING).map(AppSetting::getValue).orElse(null))) {
+        if (!RULE_MATCHING_VERSION.equals(setting(RULE_MATCHING))) {
             settings.save(new AppSetting(RULE_MATCHING, RULE_MATCHING_VERSION));
+            changed = true;
+        }
+        // Once: payments to people stop being guessed at, "SQ *" (Square takes payments for
+        // every kind of business, not just cafes) stops meaning Dining, rent portals and more
+        // student-loan servicers are known, and what you'd already filed by hand counts as reviewed.
+        if (!BUILT_IN_RULES_VERSION.equals(setting(BUILT_IN_RULES))) {
+            for (CategoryRule r : rules.findAll()) {
+                if (r.getPriority() == BUILT_IN_PRIORITY && r.getPattern().equals("SQ *")
+                        && "Dining".equals(r.getCategory().getName())) {
+                    rules.delete(r);
+                }
+            }
+            seedRules(ADDED_IN_3, BUILT_IN_PRIORITY);
+            seedRules(PEOPLE, PEOPLE_PRIORITY);
+            txns.markReviewed(CategorySource.MANUAL);
+            // The shortcut's old prompt was too quick to say Dining. Those guesses go back to
+            // being leftovers, for the rules and the stricter prompt to try again.
+            for (Transaction t : txns.findByCategorySource(CategorySource.AI)) {
+                if (t.getCategory() != null && "Dining".equals(t.getCategory().getName()) && !t.isReviewed()) {
+                    t.setCategory(null);
+                    t.setCategorySource(CategorySource.DEFAULT);
+                }
+            }
+            settings.save(new AppSetting(BUILT_IN_RULES, BUILT_IN_RULES_VERSION));
             changed = true;
         }
         if (changed) {
@@ -255,15 +311,35 @@ public class ReferenceData implements ApplicationRunner {
         for (Seed seed : CATEGORIES) {
             categories.save(new Category(seed.name(), seed.kind(), colorFor(seed.kind()), seed.icon(), order++));
         }
+        int count = seedRules(RULES, BUILT_IN_PRIORITY) + seedRules(PEOPLE, PEOPLE_PRIORITY);
+        settings.save(new AppSetting(BUILT_IN_RULES, BUILT_IN_RULES_VERSION));
+        log.info("Seeded {} categories and {} categorization rules", CATEGORIES.size(), count);
+    }
+
+    /** Adds each rule that isn't there already; a seed whose category was deleted is skipped. */
+    private int seedRules(List<RuleSeed> seeds, int priority) {
+        Set<String> have = new HashSet<>();
+        for (CategoryRule r : rules.findAll()) {
+            have.add(r.getPattern() + "|" + r.getCategory().getId() + "|" + r.getSign());
+        }
         int count = 0;
-        for (RuleSeed seed : RULES) {
-            Category category = categories.findByNameIgnoreCase(seed.category()).orElseThrow();
+        for (RuleSeed seed : seeds) {
+            Category category = categories.findByNameIgnoreCase(seed.category()).orElse(null);
+            if (category == null) {
+                continue;
+            }
             for (String pattern : seed.patterns()) {
-                rules.save(new CategoryRule(pattern, category, seed.sign(), seed.accountType(), BUILT_IN_PRIORITY));
-                count++;
+                if (have.add(pattern + "|" + category.getId() + "|" + seed.sign())) {
+                    rules.save(new CategoryRule(pattern, category, seed.sign(), seed.accountType(), priority));
+                    count++;
+                }
             }
         }
-        log.info("Seeded {} categories and {} categorization rules", CATEGORIES.size(), count);
+        return count;
+    }
+
+    private String setting(String key) {
+        return settings.findById(key).map(AppSetting::getValue).orElse(null);
     }
 
     public static String colorFor(CategoryKind kind) {

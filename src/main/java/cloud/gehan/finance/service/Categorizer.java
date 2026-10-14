@@ -67,6 +67,28 @@ public class Categorizer {
         if (t.getCategorySource() == CategorySource.MANUAL && t.getCategory() != null) {
             return;
         }
+        AccountType accountType = t.getAccount().getType();
+        CategoryRule r = firstRule(t, ctx);
+        // Two sides of a move between your own accounts stay a transfer whatever a built-in
+        // rule says (a Zelle to yourself isn't paying someone); only a rule of yours re-files it.
+        boolean paired = t.getCategorySource() == CategorySource.TRANSFER_MATCH && t.getPairedTxnId() != null
+                && t.getCategory() != null;
+        if (r != null && !(paired && r.getPriority() < ReferenceData.USER_PRIORITY)) {
+            set(t, guardSavings(t, r.getCategory(), ctx), CategorySource.RULE);
+            return;
+        }
+        // The shortcut only files what nothing else could, so its choice stands until a rule or you say otherwise.
+        if (t.getCategorySource() == CategorySource.AI && t.getCategory() != null) {
+            return;
+        }
+        if (t.getCategorySource() == CategorySource.TRANSFER_MATCH && t.getPairedTxnId() != null && t.getCategory() != null) {
+            return;
+        }
+        set(t, ctx.named(defaultFor(accountType, t.getAmountCents())), CategorySource.DEFAULT);
+    }
+
+    /** The rule that files this transaction, or null when none matches. */
+    public CategoryRule firstRule(Transaction t, Context ctx) {
         WordMatch.Text text = WordMatch.Text.of(t.matchText());
         AccountType accountType = t.getAccount().getType();
         for (Compiled c : ctx.rules) {
@@ -79,18 +101,10 @@ public class Categorizer {
                     && (t.getAmountCents() >= PaycheckService.MIN_CENTS
                             || !ReferenceData.PAYCHECK.equals(r.getCategory().getName()))
                     && c.words.in(text)) {
-                set(t, guardSavings(t, r.getCategory(), ctx), CategorySource.RULE);
-                return;
+                return r;
             }
         }
-        // The shortcut only files what nothing else could, so its choice stands until a rule or you say otherwise.
-        if (t.getCategorySource() == CategorySource.AI && t.getCategory() != null) {
-            return;
-        }
-        if (t.getCategorySource() == CategorySource.TRANSFER_MATCH && t.getPairedTxnId() != null && t.getCategory() != null) {
-            return;
-        }
-        set(t, ctx.named(defaultFor(accountType, t.getAmountCents())), CategorySource.DEFAULT);
+        return null;
     }
 
     static String defaultFor(AccountType type, long amountCents) {
@@ -104,7 +118,13 @@ public class Categorizer {
         };
     }
 
-    private void set(Transaction t, Category category, CategorySource source) {
+    /** Files it; a different category from the one you checked off puts it back on your list. */
+    static void set(Transaction t, Category category, CategorySource source) {
+        Long before = t.getCategory() == null ? null : t.getCategory().getId();
+        Long after = category == null ? null : category.getId();
+        if (t.isReviewed() && before != null && !java.util.Objects.equals(before, after)) {
+            t.setReviewed(false);
+        }
         t.setCategory(category);
         t.setCategorySource(source);
     }

@@ -91,12 +91,26 @@ public class CategoryController {
     public CategoryView update(@PathVariable Long id, @RequestBody CategoryBody body) {
         return tx.execute(s -> {
             Category c = categories.findById(id).orElseThrow();
-            if (body.name() != null && !body.name().isBlank()) {
+            boolean required = ReferenceData.REQUIRED.contains(c.getName());
+            if (body.name() != null && !body.name().isBlank() && !body.name().trim().equals(c.getName())) {
+                if (required) {
+                    throw new IllegalArgumentException(c.getName() + " is used by the app and keeps its name.");
+                }
+                categories.findByNameIgnoreCase(body.name().trim()).filter(other -> !other.getId().equals(id))
+                        .ifPresent(other -> {
+                            throw new IllegalArgumentException("There is already a category called " + other.getName());
+                        });
                 c.setName(body.name().trim());
             }
-            if (body.kind() != null) {
+            if (body.kind() != null && body.kind() != c.getKind()) {
+                if (required) {
+                    throw new IllegalArgumentException(c.getName() + " is used by the app and stays where it is.");
+                }
                 c.setKind(body.kind());
                 c.setColor(ReferenceData.colorFor(body.kind()));
+                // Only income can be earned and only spending can be a monthly bill.
+                c.setEarnedIncome(body.kind() == CategoryKind.INCOME && !Boolean.FALSE.equals(body.earnedIncome()));
+                c.setFixedCost(body.kind() == CategoryKind.EXPENSE && Boolean.TRUE.equals(body.fixedCost()));
             }
             if (body.icon() != null) {
                 c.setIcon(blankToNull(body.icon()));
@@ -117,9 +131,14 @@ public class CategoryController {
     public void delete(@PathVariable Long id) {
         tx.executeWithoutResult(s -> {
             Category c = categories.findById(id).orElseThrow();
+            if (ReferenceData.REQUIRED.contains(c.getName())) {
+                throw new IllegalArgumentException(c.getName() + " is used by the app and can't be deleted.");
+            }
+            // Back to the rules, and back on your list to check.
             for (Transaction t : txns.findByCategory(c)) {
                 t.setCategory(null);
                 t.setCategorySource(CategorySource.DEFAULT);
+                t.setReviewed(false);
             }
             for (SavingsGoal g : goals.findByCategory(c)) {
                 g.setCategory(null);

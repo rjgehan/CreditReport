@@ -80,7 +80,13 @@ public class HistoryService {
         }
         NavigableMap<LocalDate, Long> worth = netWorth.daily(first.atDay(1).minusDays(1), LocalDate.now(zone));
         List<MonthScore> out = new ArrayList<>();
+        // Months that ended before the bank history began hold only what you typed in (old
+        // rent on the Bills page, say): no income, nothing to score.
+        LocalDate historyStart = txns.earliestDay().orElse(null);
         for (YearMonth m = now; !m.isBefore(first); m = m.minusMonths(1)) {
+            if (historyStart != null && m.atEndOfMonth().isBefore(historyStart)) {
+                continue;
+            }
             MonthScore s = score(m, breakdowns, worth);
             if (s.incomeCents() > 0 || s.spentCents() > 0) {
                 out.add(s);

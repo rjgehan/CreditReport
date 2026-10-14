@@ -21,7 +21,7 @@ public final class Views {
     public record TxnView(Long id, LocalDate day, long amountCents, String description, String merchant,
             Long accountId, String accountName, String accountType,
             Long categoryId, String categoryName, String categoryIcon, String categoryKind, String categorySource,
-            boolean pending, boolean paired, String notes, boolean manual, String logo) {
+            boolean pending, boolean paired, String notes, boolean manual, boolean reviewed, String logo) {
 
         public static TxnView of(Transaction t) {
             Category c = t.getCategory();
@@ -31,7 +31,7 @@ public final class Views {
                     c == null ? null : c.getId(), c == null ? null : c.getName(), c == null ? null : c.getIcon(),
                     c == null ? null : c.getKind().name(),
                     t.getCategorySource() == null ? null : t.getCategorySource().name(),
-                    t.isPending(), t.getPairedTxnId() != null, t.getNotes(), a.isManual(),
+                    t.isPending(), t.getPairedTxnId() != null, t.getNotes(), t.isEditable(), t.isReviewed(),
                     MerchantLogos.domainFor(t.getMerchant(), t.getDescription()));
         }
     }
@@ -62,11 +62,12 @@ public final class Views {
         }
     }
 
+    /** @param required the app files things here by name, so it can't be renamed, moved or deleted */
     public record CategoryView(Long id, String name, String kind, String icon, String color, int sortOrder,
-            boolean earnedIncome, boolean fixedCost) {
+            boolean earnedIncome, boolean fixedCost, boolean required) {
         public static CategoryView of(Category c) {
             return new CategoryView(c.getId(), c.getName(), c.getKind().name(), c.getIcon(), c.getColor(), c.getSortOrder(),
-                    c.isEarnedIncome(), c.isFixedCost());
+                    c.isEarnedIncome(), c.isFixedCost(), ReferenceData.REQUIRED.contains(c.getName()));
         }
     }
 

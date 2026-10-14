@@ -61,5 +61,49 @@ class ParsingTest {
     @Test
     void payerKeyIgnoresReferenceNumbers() {
         assertThat(PaycheckService.payerKey("ACME CORP PAYROLL PPD ID: 9876543210")).isEqualTo("ACME CORP PAYROLL");
+        assertThat(PaycheckService.payerKey("ORIG CO NAME:ACME, INC. CO ENTRY DESCR:PAYROLL SEC:PPD")).isEqualTo("ACME INC");
+    }
+
+    @Test
+    void rulesLookPastPunctuationAndNumbers() {
+        assertThat(WordMatch.of("ACME INC").in("ACME, INC. 1015 EDI PYMNTS")).isTrue();
+        assertThat(WordMatch.of("ACME INC PAYROLL").in("ACME INC 10/15 PAYROLL")).isTrue();
+        assertThat(WordMatch.of("UBER EATS").in("UBER*EATS 8005928996")).isTrue();
+        assertThat(WordMatch.of("ACME INC").in("ACMEINC PAYROLL")).isFalse();
+        assertThat(WordMatch.of("RENT").in("CURRENT BALANCE")).isFalse();
+        // Letters inside a reference code aren't words.
+        assertThat(WordMatch.of("ADP").in("ZELLE PAYMENT FROM JANE JPM99ADP7K2")).isFalse();
+        assertThat(WordMatch.of("BP").in("MOBILE DEPOSIT REF 4BP77")).isFalse();
+        // Digits and symbols are part of the name and match as typed.
+        assertThat(WordMatch.of("7-ELEVEN").in("ELEVEN MADISON PARK")).isFalse();
+        assertThat(WordMatch.of("SQ *").in("SQ JOES")).isFalse();
+    }
+
+    @Test
+    void payRulesAreMoreThanOneStoreWord() {
+        List<String> bofa = List.of("TARGET DES:PAYROLL ID:XXXXX12 INDN:DOE,JOHN CO ID:XXXXX34 PPD",
+                "TARGET DES:PAYROLL ID:XXXXX56 INDN:DOE,JOHN CO ID:XXXXX34 PPD");
+        assertThat(PaycheckService.payerKey(bofa.get(0))).isEqualTo("TARGET");
+        assertThat(PaycheckService.ruleWords(bofa, "TARGET")).isEqualTo("TARGET DES PAYROLL");
+
+        List<String> chase = List.of("ORIG CO NAME:3M COMPANY ORIG ID:1234567 DESC DATE:101524 CO ENTRY DESCR:PAYROLL SEC:PPD",
+                "ORIG CO NAME:3M COMPANY ORIG ID:1234567 DESC DATE:103124 CO ENTRY DESCR:PAYROLL SEC:PPD");
+        assertThat(PaycheckService.payerKey(chase.get(0))).isEqualTo("COMPANY");
+        assertThat(PaycheckService.ruleWords(chase, "COMPANY")).isEqualTo("ORIG CO NAME COMPANY");
+        assertThat(WordMatch.of("ORIG CO NAME COMPANY").in("ORIG CO NAME:THE GAS COMPANY ORIG ID:99 CO ENTRY DESCR:REFUND")).isFalse();
+
+        List<String> acme = List.of("ACME, INC. 0915 EDI PYMNTS", "ACME, INC. 0930 EDI PYMNTS");
+        assertThat(PaycheckService.ruleWords(acme, "ACME INC EDI")).isEqualTo("ACME INC EDI");
+    }
+
+    @Test
+    void payerKeyIsFoundInTheDescriptionItCameFrom() {
+        for (String d : List.of("ACME CORP PAYROLL PPD ID: 9876543210", "ACME, INC. 10/15 EDI PYMNTS",
+                "ACME-INC. PAYROLL 0423", "Acme Inc.; Deposit #4471", "1015 ACME INC",
+                "ORIG CO NAME:ACME, INC. CO ENTRY DESCR:PAYROLL SEC:PPD TRACE#:091000019")) {
+            String key = PaycheckService.payerKey(d);
+            assertThat(key).as(d).isNotBlank();
+            assertThat(WordMatch.of(key).in(d)).as(d).isTrue();
+        }
     }
 }

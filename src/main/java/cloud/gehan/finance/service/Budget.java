@@ -29,12 +29,15 @@ public class Budget {
     private final FlowService flow;
     private final Settings settings;
     private final TransactionRepository txns;
+    private final PaycheckService paychecks;
     private final ZoneId zone;
 
-    public Budget(FlowService flow, Settings settings, TransactionRepository txns, AppProperties props) {
+    public Budget(FlowService flow, Settings settings, TransactionRepository txns, PaycheckService paychecks,
+            AppProperties props) {
         this.flow = flow;
         this.settings = settings;
         this.txns = txns;
+        this.paychecks = paychecks;
         this.zone = props.zoneId();
     }
 
@@ -96,7 +99,11 @@ public class Budget {
                 spendable, left, perDay, f, e, status, verdict);
     }
 
-    /** The average take-home of the last few complete months that had any, or null with no history. */
+    /**
+     * The average take-home of the last few complete months that had any. A new
+     * connection without a full month behind it goes by the paychecks you've
+     * confirmed; null when there's neither.
+     */
     public Long expectedIncome(YearMonth month) {
         long sum = 0;
         int count = 0;
@@ -111,7 +118,11 @@ public class Budget {
                 count++;
             }
         }
-        return count == 0 ? null : sum / count;
+        if (count > 0) {
+            return sum / count;
+        }
+        long pay = paychecks.confirmedMonthlyPay();
+        return pay > 0 ? pay : null;
     }
 
     /**

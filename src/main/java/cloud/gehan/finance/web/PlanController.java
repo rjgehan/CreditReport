@@ -2,6 +2,7 @@ package cloud.gehan.finance.web;
 
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -20,10 +21,8 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import cloud.gehan.finance.config.AppProperties;
-import cloud.gehan.finance.model.AmountSign;
 import cloud.gehan.finance.model.Category;
 import cloud.gehan.finance.model.CategoryKind;
-import cloud.gehan.finance.model.CategoryRule;
 import cloud.gehan.finance.model.GoalType;
 import cloud.gehan.finance.model.PayFrequency;
 import cloud.gehan.finance.model.Paystub;
@@ -31,13 +30,10 @@ import cloud.gehan.finance.model.SavingsGoal;
 import cloud.gehan.finance.model.SpendingTarget;
 import cloud.gehan.finance.repo.AccountRepository;
 import cloud.gehan.finance.repo.CategoryRepository;
-import cloud.gehan.finance.repo.CategoryRuleRepository;
 import cloud.gehan.finance.repo.PaystubRepository;
 import cloud.gehan.finance.repo.SavingsGoalRepository;
 import cloud.gehan.finance.repo.SpendingTargetRepository;
 import cloud.gehan.finance.service.PaycheckService;
-import cloud.gehan.finance.service.ReferenceData;
-import cloud.gehan.finance.service.RuleService;
 import cloud.gehan.finance.service.TargetService;
 import cloud.gehan.finance.web.Views.PaystubView;
 import jakarta.validation.Valid;
@@ -55,25 +51,20 @@ public class PlanController {
     private final SavingsGoalRepository goals;
     private final PaystubRepository paystubs;
     private final CategoryRepository categories;
-    private final CategoryRuleRepository rules;
     private final AccountRepository accounts;
-    private final RuleService ruleService;
     private final TransactionTemplate tx;
     private final AppProperties props;
 
     public PlanController(TargetService targetService, PaycheckService paychecks, SpendingTargetRepository targets,
             SavingsGoalRepository goals, PaystubRepository paystubs, CategoryRepository categories,
-            CategoryRuleRepository rules, AccountRepository accounts, RuleService ruleService, TransactionTemplate tx,
-            AppProperties props) {
+            AccountRepository accounts, TransactionTemplate tx, AppProperties props) {
         this.targetService = targetService;
         this.paychecks = paychecks;
         this.targets = targets;
         this.goals = goals;
         this.paystubs = paystubs;
         this.categories = categories;
-        this.rules = rules;
         this.accounts = accounts;
-        this.ruleService = ruleService;
         this.tx = tx;
         this.props = props;
     }
@@ -166,18 +157,10 @@ public class PlanController {
     public record TrackBody(@NotBlank String pattern) {
     }
 
-    /** "That's my paycheck": a rule sending these deposits to Paycheck from now on. */
+    /** "That's my paycheck": these deposits, and every later one, are Paycheck. */
     @PostMapping("/paychecks/track")
     public Map<String, Object> track(@RequestBody @Valid TrackBody body) {
-        int refiled = tx.execute(s -> {
-            Category paycheck = categories.findByNameIgnoreCase(ReferenceData.PAYCHECK)
-                    .orElseThrow(() -> new IllegalStateException("The Paycheck category was deleted; create it again first."));
-            rules.save(new CategoryRule(body.pattern().trim().toUpperCase(Locale.ROOT), paycheck, AmountSign.IN, null,
-                    Math.max(ReferenceData.USER_PRIORITY, rules.maxPriority() + 1)));
-            rules.flush();
-            return ruleService.reapply();
-        });
-        return Map.of("refiled", refiled);
+        return Map.of("filed", paychecks.track(body.pattern()));
     }
 
     public record PaystubBody(@NotBlank String employer, String matchPattern, PayFrequency frequency, long grossCents,
@@ -185,15 +168,33 @@ public class PlanController {
             long otherDeductionsCents, long employerMatchCents, Boolean active) {
     }
 
+    /**
+     * A paystub's deposit description names its paychecks, so a new or changed one
+     * also files the regular deposits it finds as Paycheck. {@code filed} is null when
+     * there was nothing to look for.
+     */
     @PostMapping("/paystubs")
     @ResponseStatus(HttpStatus.CREATED)
-    public PaystubView createPaystub(@RequestBody @Valid PaystubBody body) {
-        return tx.execute(s -> PaystubView.of(paystubs.save(apply(new Paystub(body.employer()), body))));
+    public Map<String, Object> createPaystub(@RequestBody @Valid PaystubBody body) {
+        return tx.execute(s -> saved(paystubs.save(apply(new Paystub(body.employer()), body)), null));
     }
 
     @PutMapping("/paystubs/{id}")
-    public PaystubView updatePaystub(@PathVariable Long id, @RequestBody @Valid PaystubBody body) {
-        return tx.execute(s -> PaystubView.of(apply(paystubs.findById(id).orElseThrow(), body)));
+    public Map<String, Object> updatePaystub(@PathVariable Long id, @RequestBody @Valid PaystubBody body) {
+        return tx.execute(s -> {
+            Paystub p = paystubs.findById(id).orElseThrow();
+            String before = p.getMatchPattern();
+            return saved(apply(p, body), before);
+        });
+    }
+
+    private Map<String, Object> saved(Paystub p, String patternBefore) {
+        Map<String, Object> out = new HashMap<>();
+        out.put("paystub", PaystubView.of(p));
+        String pattern = p.getMatchPattern();
+        boolean lookFor = pattern != null && !pattern.equals(patternBefore) && paychecks.canFile();
+        out.put("filed", lookFor ? paychecks.trackPaystub(pattern) : null);
+        return out;
     }
 
     @DeleteMapping("/paystubs/{id}")

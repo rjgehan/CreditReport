@@ -29,4 +29,13 @@ public enum AccountType {
     public boolean savingsLike() {
         return this == SAVINGS || this == BROKERAGE || this == RETIREMENT;
     }
+
+    /**
+     * Where pay can land. Money arriving on a card is a refund, on a loan a payment,
+     * and in a 401(k) a contribution, even when it carries the employer's name. A
+     * brokerage stays in: some cash-management accounts are brokerages on paper.
+     */
+    public boolean receivesPay() {
+        return this != CREDIT_CARD && this != LOAN && this != RETIREMENT;
+    }
 }

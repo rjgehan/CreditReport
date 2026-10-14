@@ -1,6 +1,6 @@
 import { get, post, put, del } from '../api.js';
 import { h, sheet, toast, field, busy, confirmSheet, icon } from '../ui.js';
-import { money, pct, parseMoney, centsToInput, shortDate, thisMonth, privacy } from '../fmt.js';
+import { money, pct, parseMoney, centsToInput, shortDate, thisMonth, privacy, depositLine, filedLine } from '../fmt.js';
 import { meter } from '../charts.js';
 import { categories } from './activity.js';
 
@@ -148,16 +148,18 @@ async function pay(root, refresh) {
 
   const detected = h('div', { class: 'list' });
   for (const p of o.detected) {
+    let action = h('span', { class: 'pill good' }, '✓ Paycheck');
+    if (!p.tracked) {
+      action = h('button', { class: 'btn small' }, 'This is my pay');
+      action.addEventListener('click', busy(action, async () => {
+        const r = await post('/api/paychecks/track', { pattern: p.pattern });
+        toast(filedLine(r.filed)); refresh();
+      }));
+    }
     detected.append(h('div', { class: 'row' },
-      h('div', { class: 'avatar' }, '💼'),
       h('div', { class: 'main' }, h('div', { class: 'title' }, p.pattern),
-        h('div', { class: 'meta' }, `${p.frequency.toLowerCase()} · ~${money(p.averageCents)} · next ${shortDate(p.nextExpected)}`)),
-      p.tracked ? h('span', { class: 'pill good' }, '✓ Paycheck')
-        : h('button', { class: 'btn small', onclick: async (e) => {
-          e.currentTarget.disabled = true;
-          const r = await post('/api/paychecks/track', { pattern: p.pattern });
-          toast(`${r.refiled} deposits filed as Paycheck`); refresh();
-        } }, 'This is my pay')));
+        h('div', { class: 'meta' }, `${depositLine(p)} · next ${shortDate(p.nextExpected)}`)),
+      action));
   }
   if (!o.detected.length) detected.append(h('div', { class: 'empty' }, 'No regular deposits found yet. They show up after two or three paydays.'));
   root.append(h('div', { class: 'section-title' }, 'Regular deposits'), h('section', { class: 'card flush' }, detected));
@@ -210,14 +212,15 @@ function paystubSheet(p, refresh) {
       const payload = { employer: employer.value.trim(), matchPattern: pattern.value.trim() || null, frequency: freq.value,
         grossCents: v(gross), federalTaxCents: v(fed), stateTaxCents: v(state), ficaCents: v(fica), retirementCents: v(k401),
         benefitsCents: v(benefits), otherDeductionsCents: v(other), employerMatchCents: v(match), active: true };
-      if (p) await put('/api/paystubs/' + p.id, payload); else await post('/api/paystubs', payload);
+      const r = p ? await put('/api/paystubs/' + p.id, payload) : await post('/api/paystubs', payload);
+      if (r.filed) toast(filedLine(r.filed, payload.matchPattern));
       s.close(); refresh();
     }));
     const remove = p ? h('button', { class: 'btn danger', onclick: async () => { await del('/api/paystubs/' + p.id); s.close(); refresh(); } }, 'Delete') : null;
     body.append(h('div', { class: 'form' },
       h('p', { class: 'hint', style: { margin: 0 } }, 'Copy the amounts from one recent paystub, per paycheck.'),
       h('div', { class: 'two' }, field('Employer', employer), field('How often', freq)),
-      field('Deposit description contains', pattern, 'How to recognise this paycheck in checking. Blank if it is your only one.'),
+      field('Deposit description contains', pattern, 'A word or two from the deposit, like the employer name. Matching deposits are filed as Paycheck.'),
       field('Gross pay', gross),
       h('div', { class: 'two' }, field('Federal tax', fed), field('State tax', state)),
       h('div', { class: 'two' }, field('Social Security + Medicare', fica), field('401(k) (pre-tax)', k401)),

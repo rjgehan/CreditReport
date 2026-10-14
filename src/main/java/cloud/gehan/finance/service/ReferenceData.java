@@ -2,6 +2,7 @@ package cloud.gehan.finance.service;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 import org.slf4j.Logger;
@@ -15,9 +16,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import cloud.gehan.finance.model.AccountType;
 import cloud.gehan.finance.model.AmountSign;
+import cloud.gehan.finance.model.AppSetting;
 import cloud.gehan.finance.model.Category;
 import cloud.gehan.finance.model.CategoryKind;
 import cloud.gehan.finance.model.CategoryRule;
+import cloud.gehan.finance.repo.AppSettingRepository;
 import cloud.gehan.finance.repo.CategoryRepository;
 import cloud.gehan.finance.repo.CategoryRuleRepository;
 
@@ -148,14 +151,20 @@ public class ReferenceData implements ApplicationRunner {
     private final CategoryRuleRepository rules;
     private final TransactionTemplate tx;
     private final RuleService ruleService;
+    private final AppSettingRepository settings;
 
     public ReferenceData(CategoryRepository categories, CategoryRuleRepository rules, TransactionTemplate tx,
-            RuleService ruleService) {
+            RuleService ruleService, AppSettingRepository settings) {
         this.categories = categories;
         this.rules = rules;
         this.tx = tx;
         this.ruleService = ruleService;
+        this.settings = settings;
     }
+
+    /** Bumped when rules start matching differently, so everything is filed again once. */
+    static final String RULE_MATCHING = "rule-matching";
+    static final String RULE_MATCHING_VERSION = "2";
 
     /** Earned income: what "income" means everywhere in the app. */
     static final Set<String> EARNED = Set.of(PAYCHECK, SIDE_INCOME);
@@ -212,6 +221,25 @@ public class ReferenceData implements ApplicationRunner {
                     changed = true;
                 }
             }
+        }
+        // Tapping "This is my pay" twice used to add the same rule twice. Keep the highest-ranked
+        // copy of each of yours; built-in rules are never touched.
+        Set<String> seen = new HashSet<>();
+        for (CategoryRule r : rules.findAllByOrderByPriorityDescIdAsc()) {
+            if (r.getPriority() < USER_PRIORITY) {
+                continue;
+            }
+            String key = r.getPattern().trim().toUpperCase(Locale.ROOT) + "|" + r.getCategory().getId() + "|" + r.getSign()
+                    + "|" + r.getAccountType();
+            if (!seen.add(key)) {
+                rules.delete(r);
+                changed = true;
+            }
+        }
+        // Rules now match across punctuation and numbers (WordMatch); deposits they missed get filed.
+        if (!RULE_MATCHING_VERSION.equals(settings.findById(RULE_MATCHING).map(AppSetting::getValue).orElse(null))) {
+            settings.save(new AppSetting(RULE_MATCHING, RULE_MATCHING_VERSION));
+            changed = true;
         }
         if (changed) {
             rules.flush();

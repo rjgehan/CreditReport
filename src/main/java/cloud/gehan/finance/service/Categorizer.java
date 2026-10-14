@@ -21,6 +21,8 @@ import cloud.gehan.finance.repo.CategoryRuleRepository;
 
 /**
  * Picks a category for every transaction you haven't picked one for yourself.
+ * Rules match their words wherever they appear, whatever punctuation or numbers
+ * sit between them (see {@link WordMatch}).
  *
  * <p>In order: your rules (highest priority first, then the longest pattern, so
  * UBER EATS beats UBER), the provider's own category, an existing transfer pairing,
@@ -52,7 +54,7 @@ public class Categorizer {
         List<Compiled> compiled = rules.findAllByOrderByPriorityDescIdAsc().stream()
                 .sorted(Comparator.comparingInt((CategoryRule r) -> r.getPriority()).reversed()
                         .thenComparing(r -> -r.getPattern().length()))
-                .map(r -> new Compiled(r, wordPattern(r.getPattern())))
+                .map(r -> new Compiled(r, WordMatch.of(r.getPattern())))
                 .toList();
         Map<String, Category> byName = new HashMap<>();
         for (Category c : categories.findAll()) {
@@ -65,13 +67,18 @@ public class Categorizer {
         if (t.getCategorySource() == CategorySource.MANUAL && t.getCategory() != null) {
             return;
         }
-        String text = t.matchText().toUpperCase(Locale.ROOT);
+        WordMatch.Text text = WordMatch.Text.of(t.matchText());
         AccountType accountType = t.getAccount().getType();
         for (Compiled c : ctx.rules) {
             CategoryRule r = c.rule;
             if (r.getSign().matches(t.getAmountCents())
                     && (r.getAccountType() == null || r.getAccountType() == accountType)
-                    && c.pattern.matcher(text).find()) {
+                    // An employer's name on a card refund or a 401(k) contribution isn't pay,
+                    // and neither is a small reimbursement that comes through like a paycheck.
+                    && (accountType.receivesPay() || !r.getCategory().isEarnedIncome())
+                    && (t.getAmountCents() >= PaycheckService.MIN_CENTS
+                            || !ReferenceData.PAYCHECK.equals(r.getCategory().getName()))
+                    && c.words.in(text)) {
                 set(t, guardSavings(t, r.getCategory(), ctx), CategorySource.RULE);
                 return;
             }
@@ -133,7 +140,7 @@ public class Categorizer {
         return Pattern.compile(sb.toString());
     }
 
-    record Compiled(CategoryRule rule, Pattern pattern) {
+    record Compiled(CategoryRule rule, WordMatch words) {
     }
 
     public record Context(List<Compiled> rules, Map<String, Category> byName) {

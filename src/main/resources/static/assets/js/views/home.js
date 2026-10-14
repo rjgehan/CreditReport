@@ -4,7 +4,7 @@
 
 import { get, post } from '../api.js';
 import { h, toast, busy, icon } from '../ui.js';
-import { money, pct, monthLabel, ago, shortDate, privacy, parseDay } from '../fmt.js';
+import { money, pct, monthLabel, ago, shortDate, privacy, parseDay, depositLine, filedLine } from '../fmt.js';
 import { meter } from '../charts.js';
 
 const MAX_TARGETS = 6;
@@ -193,12 +193,21 @@ function goals(d) {
  * count, so offer the regular deposits the app has spotted, one tap each.
  */
 async function incomeSetup(app) {
-  const { overview } = await get('/api/paychecks');
+  const { detected } = (await get('/api/paychecks')).overview;
   // Pay already recognised: income is just waiting for this month's payday.
-  if (overview.detected.some((p) => p.tracked)) return null;
-  const candidates = overview.detected.filter((p) => !p.tracked).slice(0, 3);
+  if (detected.some((p) => p.tracked && !p.accountHidden)) return null;
   const card = h('section', { class: 'card flush setup' },
     h('div', { class: 'tcard-head' }, h('h2', null, 'Set up your income')));
+  // Recognised, but it lands in an account you hid, and hidden accounts count nowhere.
+  const hiddenPay = detected.find((p) => p.tracked && p.accountHidden);
+  if (hiddenPay) {
+    card.append(h('div', { class: 'row' },
+      h('div', { class: 'main' }, h('div', { class: 'title' }, `Pay from ${hiddenPay.pattern} lands in ${hiddenPay.accountName}`),
+        h('div', { class: 'meta wrap' }, 'That account is hidden, so it doesn\'t count. Show it again from Hidden at the bottom of Accounts.')),
+      h('a', { class: 'btn small', href: '#/accounts' }, 'Accounts')));
+  }
+  const candidates = detected.filter((p) => !p.tracked).slice(0, 3);
+  if (!candidates.length && hiddenPay) return card;
   if (!candidates.length) {
     card.append(h('div', { class: 'row' }, h('div', { class: 'main' },
       h('div', { class: 'meta wrap' }, 'No regular deposits spotted yet. Open a paycheck in Activity, file it as Paycheck and tick "always file like this".')),
@@ -210,13 +219,13 @@ async function incomeSetup(app) {
     const yes = h('button', { class: 'btn small primary' }, 'This is my pay');
     yes.addEventListener('click', busy(yes, async () => {
       const r = await post('/api/paychecks/track', { pattern: p.pattern });
-      toast(`${r.refiled} deposits filed as Paycheck`);
+      toast(filedLine(r.filed));
       app.rerender();
     }));
     card.append(h('div', { class: 'row' },
       h('div', { class: 'main' },
         h('div', { class: 'title' }, p.pattern),
-        h('div', { class: 'meta' }, `${money(p.averageCents)} ${p.frequency.toLowerCase().replace('_', ' ')}, ${p.count} times`)),
+        h('div', { class: 'meta' }, depositLine(p))),
       yes));
   }
   card.append(paystubLink());

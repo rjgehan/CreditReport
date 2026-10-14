@@ -137,3 +137,19 @@ export const TYPE_LABEL = {
   CHECKING: 'Checking', SAVINGS: 'Savings', CREDIT_CARD: 'Credit card', BROKERAGE: 'Brokerage',
   RETIREMENT: 'Retirement', LOAN: 'Loan', OTHER: 'Other',
 };
+
+export const PAY_FREQUENCY = {
+  WEEKLY: 'weekly', BIWEEKLY: 'every other week', SEMIMONTHLY: 'twice a month', MONTHLY: 'monthly',
+};
+
+/** What a regular deposit looks like in one line: "$2,150 twice a month into SoFi Checking". */
+export function depositLine(p) {
+  return `${money(p.averageCents)} ${PAY_FREQUENCY[p.frequency] || ''} into ${p.accountName}${p.accountHidden ? ' (hidden)' : ''}`;
+}
+
+/** The toast after filing deposits as Paycheck: { matched, refiled } from the server. */
+export function filedLine(filed, pattern) {
+  if (!filed.matched) return pattern ? `No regular deposit contains "${pattern}"` : 'No deposits found to file';
+  const n = filed.refiled;
+  return n ? `${n} deposit${n === 1 ? '' : 's'} filed as Paycheck` : 'Already filed as Paycheck';
+}

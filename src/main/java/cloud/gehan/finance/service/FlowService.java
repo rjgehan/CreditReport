@@ -9,7 +9,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.regex.Pattern;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -141,11 +140,11 @@ public class FlowService {
 
         List<Paystub> stubs = paystubs.findByActiveTrue();
         Map<Paystub, long[]> payTally = new LinkedHashMap<>();
-        List<Pattern> stubPatterns = new ArrayList<>();
+        List<WordMatch> stubPatterns = new ArrayList<>();
         for (Paystub s : stubs) {
             payTally.put(s, new long[2]);
             stubPatterns.add(s.getMatchPattern() == null || s.getMatchPattern().isBlank()
-                    ? null : Categorizer.wordPattern(s.getMatchPattern()));
+                    ? null : WordMatch.of(s.getMatchPattern()));
         }
 
         for (Transaction t : txns.findVisibleBetween(from, to)) {
@@ -167,8 +166,9 @@ public class FlowService {
                     if (!bucket.earned()) {
                         continue;
                     }
+                    // Only a deposit into checking or savings stands for a whole paystub's deductions.
                     Paystub stub = ReferenceData.PAYCHECK.equals(bucket.name()) && amount > 0
-                            ? stubFor(t, stubs, stubPatterns) : null;
+                            && t.getAccount().getType().receivesPay() ? stubFor(t, stubs, stubPatterns) : null;
                     if (stub != null) {
                         long[] tally = payTally.get(stub);
                         tally[0]++;
@@ -192,18 +192,23 @@ public class FlowService {
         return new Breakdown(from, to, sortDesc(income), sortDesc(expenses), sortDesc(savings), pay);
     }
 
-    private static Paystub stubFor(Transaction t, List<Paystub> stubs, List<Pattern> patterns) {
-        String text = t.matchText().toUpperCase(Locale.ROOT);
-        for (int i = 0; i < stubs.size(); i++) {
-            if (patterns.get(i) != null && patterns.get(i).matcher(text).find()) {
-                return stubs.get(i);
+    private static Paystub stubFor(Transaction t, List<Paystub> stubs, List<WordMatch> patterns) {
+        WordMatch.Text text = WordMatch.Text.of(t.matchText());
+        Paystub stub = null;
+        for (int i = 0; i < stubs.size() && stub == null; i++) {
+            if (patterns.get(i) != null && patterns.get(i).in(text)) {
+                stub = stubs.get(i);
             }
         }
         // One employer and no pattern: every paycheck is theirs.
-        if (stubs.size() == 1 && patterns.get(0) == null) {
-            return stubs.get(0);
+        if (stub == null && stubs.size() == 1 && patterns.get(0) == null) {
+            stub = stubs.get(0);
         }
-        return null;
+        // A reimbursement or a bonus isn't one more paystub's worth of taxes and 401(k).
+        if (stub != null && Math.abs(t.getAmountCents() - stub.netCents()) > stub.netCents() * 0.35) {
+            return null;
+        }
+        return stub;
     }
 
     static Bucket bucket(Transaction t) {

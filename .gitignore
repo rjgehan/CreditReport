@@ -1,0 +1,25 @@
+target/
+.mvn/wrapper/maven-wrapper.jar
+
+### IDEs ###
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+.factorypath
+
+### Runtime data - bank data and keys never go in git ###
+data/
+data-*/
+*.db
+*.db-shm
+*.db-wal
+secret.key
+*.pem
+
+### Local env ###
+.env
+.env.*
+!.env.example

@@ -1,0 +1,132 @@
+# Finance on CasaOS - the app and its own Cloudflare tunnel, one stack.
+#
+# BEFORE YOU IMPORT
+#
+# 1. The data directory, owned by the UID the image runs as:
+#
+#      sudo mkdir -p /DATA/AppData/finance/teller
+#      sudo chown -R 10001:10001 /DATA/AppData/finance
+#
+# 2. Teller (free): put certificate.pem and private_key.pem from the Teller
+#    dashboard in /DATA/AppData/finance/teller/ and fill in TELLER_APPLICATION_ID.
+#
+# 3. A NEW Cloudflare tunnel (Zero Trust -> Networks -> Tunnels -> Create ->
+#    Docker); paste its token below. Public hostname:
+#      finance . gehan.cloud  ->  HTTP  ->  finance:8080
+#    Strongly consider a Cloudflare Access policy on that hostname too (email
+#    one-time PIN to your address), so the login page itself isn't public.
+#
+# Then: CasaOS -> + -> Custom Install -> Import -> paste -> fill in CHANGE ME.
+
+name: finance
+
+services:
+  finance:
+    image: ghcr.io/rjgehan/creditreport:latest
+    container_name: finance
+    hostname: finance
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+    environment:
+      # CHANGE ME. Your sign-in. A bcrypt hash ({bcrypt}$2a$...) works too.
+      - APP_USERNAME=me
+      - APP_PASSWORD=CHANGE_ME
+      # CHANGE ME. Encrypts bank tokens at rest: openssl rand -base64 32
+      # Keep a copy somewhere safe; without it the stored tokens can't be read.
+      - APP_ENCRYPTION_KEY=
+      - TELLER_APPLICATION_ID=
+      - TELLER_ENVIRONMENT=development
+      - TELLER_CERTIFICATE=/data/teller/certificate.pem
+      - TELLER_PRIVATE_KEY=/data/teller/private_key.pem
+      # Behind Cloudflare, so login throttling sees the visitor, not the tunnel.
+      - CLIENT_IP_HEADER=CF-Connecting-IP
+      - APP_DEMO_DATA=false
+      - APP_DATA_DIR=/data
+      - TZ=America/New_York
+    volumes:
+      - type: bind
+        source: /DATA/AppData/finance
+        target: /data
+    networks:
+      - finance
+    # No published port: the tunnel is the only way in, and the session cookie
+    # is Secure so plain-HTTP LAN access would not log anyone in anyway.
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    x-casaos:
+      envs:
+        - container: APP_PASSWORD
+          description:
+            en_us: Your sign-in password.
+        - container: APP_ENCRYPTION_KEY
+          description:
+            en_us: "32 random bytes, base64 (openssl rand -base64 32). Encrypts bank tokens. Back it up."
+        - container: TELLER_APPLICATION_ID
+          description:
+            en_us: From the Teller dashboard (starts with app_).
+      volumes:
+        - container: /data
+          description:
+            en_us: finance.db and the Teller certificate. Must be owned by UID 10001.
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: finance-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      # CHANGE ME. Token for a NEW tunnel, not one already serving another site.
+      - TUNNEL_TOKEN=PASTE_YOUR_TUNNEL_TOKEN_HERE
+    networks:
+      - finance
+    depends_on:
+      - finance
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+
+networks:
+  finance:
+    name: finance
+    driver: bridge
+
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: finance
+  author: rjgehan
+  developer: rjgehan
+  category: Finance
+  title:
+    en_us: Finance
+  tagline:
+    en_us: Where the money goes, every month.
+  description:
+    en_us: >-
+      Self-hosted personal finance: bank and card syncing through Teller,
+      investments priced from holdings, a cash-flow Sankey, spending targets and
+      savings goals.
+  icon: https://raw.githubusercontent.com/rjgehan/CreditReport/main/src/main/resources/static/icons/apple-touch-icon.png
+  scheme: https
+  hostname: finance.gehan.cloud
+  index: /
+  port_map: "8080"
+  store_app_id: finance

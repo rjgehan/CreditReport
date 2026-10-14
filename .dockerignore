@@ -1,0 +1,17 @@
+target/
+data/
+data-*/
+*.db
+*.db-shm
+*.db-wal
+secret.key
+*.pem
+.env
+.env.*
+.git/
+.github/
+.claude/
+.idea/
+.vscode/
+README.md
+deploy/

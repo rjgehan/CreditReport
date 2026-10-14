@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Sign in · Finance</title>
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Finance">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/js/login.js"></script>
+</head>
+<body>
+  <main style="max-width: 380px; padding-top: 14vh; padding-bottom: 40px;">
+    <div style="text-align: center; margin-bottom: 22px;">
+      <img src="/icons/icon.svg" alt="" width="64" height="64" style="border-radius: 16px;">
+      <h1 style="margin: 12px 0 4px; font-size: 26px; letter-spacing: -0.02em;">Finance</h1>
+    </div>
+    <form id="login" class="card form" autocomplete="on">
+      <label class="stack">Username
+        <input class="field" name="username" autocomplete="username" autocapitalize="none" required>
+      </label>
+      <label class="stack">Password
+        <input class="field" name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <label class="check"><input type="checkbox" name="remember-me" checked> Keep me signed in on this device</label>
+      <p id="error" class="error-text" hidden></p>
+      <button class="btn primary" type="submit">Sign in</button>
+    </form>
+  </main>
+</body>
+</html>

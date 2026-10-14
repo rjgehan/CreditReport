@@ -1,0 +1,15 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "finance-demo",
+      "runtimeExecutable": "C:\\development\\CreditReport\\mvnw.cmd",
+      "runtimeArgs": [
+        "-q",
+        "spring-boot:run",
+        "-Dspring-boot.run.arguments=--server.port=8090 --app.demo-data=true --app.password=demo --app.data-dir=./data-demo --server.servlet.session.cookie.secure=false --app.secure-cookies=false"
+      ],
+      "port": 8090
+    }
+  ]
+}

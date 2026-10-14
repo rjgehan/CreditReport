@@ -1,0 +1,1 @@
+org.springframework.boot.env.EnvironmentPostProcessor=cloud.gehan.finance.config.DataDirectory

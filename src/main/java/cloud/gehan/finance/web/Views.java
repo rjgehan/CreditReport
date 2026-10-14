@@ -2,9 +2,11 @@ package cloud.gehan.finance.web;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 
 import cloud.gehan.finance.model.Account;
 import cloud.gehan.finance.model.Category;
+import cloud.gehan.finance.model.CategoryRole;
 import cloud.gehan.finance.model.CategoryRule;
 import cloud.gehan.finance.model.Connection;
 import cloud.gehan.finance.model.Paystub;
@@ -21,7 +23,8 @@ public final class Views {
     public record TxnView(Long id, LocalDate day, long amountCents, String description, String merchant,
             Long accountId, String accountName, String accountType,
             Long categoryId, String categoryName, String categoryIcon, String categoryKind, String categorySource,
-            boolean pending, boolean paired, String notes, boolean manual, boolean reviewed, String logo) {
+            boolean pending, boolean paired, String notes, boolean manual, boolean reviewed, boolean needsCategory,
+            String logo) {
 
         public static TxnView of(Transaction t) {
             Category c = t.getCategory();
@@ -32,6 +35,7 @@ public final class Views {
                     c == null ? null : c.getKind().name(),
                     t.getCategorySource() == null ? null : t.getCategorySource().name(),
                     t.isPending(), t.getPairedTxnId() != null, t.getNotes(), t.isEditable(), t.isReviewed(),
+                    c == null || c.hasRole(CategoryRole.UNCATEGORIZED),
                     MerchantLogos.domainFor(t.getMerchant(), t.getDescription()));
         }
     }
@@ -62,12 +66,16 @@ public final class Views {
         }
     }
 
-    /** @param required the app files things here by name, so it can't be renamed, moved or deleted */
+    /**
+     * @param roles the jobs the app gives it (see CategoryRole)
+     * @param jobs the same, in words: what the app files here on its own
+     */
     public record CategoryView(Long id, String name, String kind, String icon, String color, int sortOrder,
-            boolean earnedIncome, boolean fixedCost, boolean required) {
+            boolean earnedIncome, boolean fixedCost, List<String> roles, List<String> jobs) {
         public static CategoryView of(Category c) {
             return new CategoryView(c.getId(), c.getName(), c.getKind().name(), c.getIcon(), c.getColor(), c.getSortOrder(),
-                    c.isEarnedIncome(), c.isFixedCost(), ReferenceData.REQUIRED.contains(c.getName()));
+                    c.isEarnedIncome(), c.isFixedCost(), c.getRoles().stream().map(Enum::name).toList(),
+                    c.getRoles().stream().map(CategoryRole::job).toList());
         }
     }
 

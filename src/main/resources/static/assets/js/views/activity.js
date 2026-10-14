@@ -19,7 +19,7 @@ export async function render(params, app) {
     review: params.get('review') || '',
   };
   // Links from Flow and History name Uncategorized by id; the list calls it No category.
-  const uncategorized = cats.find((c) => c.name === 'Uncategorized');
+  const uncategorized = cats.find((c) => c.roles.includes('UNCATEGORIZED'));
   if (uncategorized && state.category === String(uncategorized.id)) state.category = 'none';
   const root = h('div');
 
@@ -27,7 +27,7 @@ export async function render(params, app) {
   const catSelect = h('select', { class: 'field', 'aria-label': 'Category' },
     h('option', { value: '' }, 'All categories'),
     h('option', { value: 'none', selected: state.category === 'none' }, 'No category'),
-    cats.filter((c) => c.name !== 'Uncategorized')
+    cats.filter((c) => c !== uncategorized)
       .map((c) => h('option', { value: c.id, selected: String(c.id) === state.category }, `${c.icon || ''} ${c.name}`)));
   const acctSelect = h('select', { class: 'field', 'aria-label': 'Account' },
     h('option', { value: '' }, 'All accounts'),
@@ -142,7 +142,7 @@ export function txnRow(t, onChange, onReviewed) {
   if (t.pending) meta.push('pending');
   if (t.paired) meta.push('transfer');
   if (t.categorySource === 'MANUAL') meta.push('set by you');
-  const named = t.categoryName && t.categoryName !== 'Uncategorized';
+  const named = !t.needsCategory;
   const row = h('div', { class: 'row txn' + (t.reviewed ? ' done' : '') });
   const check = h('button', { class: 'check-btn', type: 'button' }, h('span', { class: 'ring' }, icon('check', 14)));
   const paint = () => {

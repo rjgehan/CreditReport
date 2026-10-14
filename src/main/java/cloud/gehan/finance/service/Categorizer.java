@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 import cloud.gehan.finance.model.AccountType;
 import cloud.gehan.finance.model.Category;
 import cloud.gehan.finance.model.CategoryKind;
+import cloud.gehan.finance.model.CategoryRole;
 import cloud.gehan.finance.model.CategoryRule;
 import cloud.gehan.finance.model.CategorySource;
 import cloud.gehan.finance.model.Transaction;
@@ -56,11 +57,13 @@ public class Categorizer {
                         .thenComparing(r -> -r.getPattern().length()))
                 .map(r -> new Compiled(r, WordMatch.of(r.getPattern())))
                 .toList();
-        Map<String, Category> byName = new HashMap<>();
+        Map<CategoryRole, Category> byRole = new java.util.EnumMap<>(CategoryRole.class);
         for (Category c : categories.findAll()) {
-            byName.put(c.getName().toLowerCase(Locale.ROOT), c);
+            for (CategoryRole role : c.getRoles()) {
+                byRole.putIfAbsent(role, c);
+            }
         }
-        return new Context(compiled, byName);
+        return new Context(compiled, byRole);
     }
 
     public void apply(Transaction t, Context ctx) {
@@ -84,7 +87,7 @@ public class Categorizer {
         if (t.getCategorySource() == CategorySource.TRANSFER_MATCH && t.getPairedTxnId() != null && t.getCategory() != null) {
             return;
         }
-        set(t, ctx.named(defaultFor(accountType, t.getAmountCents())), CategorySource.DEFAULT);
+        set(t, ctx.role(defaultFor(accountType, t.getAmountCents())), CategorySource.DEFAULT);
     }
 
     /** The rule that files this transaction, or null when none matches. */
@@ -99,7 +102,7 @@ public class Categorizer {
                     // and neither is a small reimbursement that comes through like a paycheck.
                     && (accountType.receivesPay() || !r.getCategory().isEarnedIncome())
                     && (t.getAmountCents() >= PaycheckService.MIN_CENTS
-                            || !ReferenceData.PAYCHECK.equals(r.getCategory().getName()))
+                            || !r.getCategory().hasRole(CategoryRole.PAYCHECK))
                     && c.words.in(text)) {
                 return r;
             }
@@ -107,14 +110,14 @@ public class Categorizer {
         return null;
     }
 
-    static String defaultFor(AccountType type, long amountCents) {
+    static CategoryRole defaultFor(AccountType type, long amountCents) {
         boolean in = amountCents > 0;
         return switch (type) {
             // Money moving inside savings and investment accounts is buying, selling
             // and transfers; what counts as saving is the move in from checking.
-            case SAVINGS, BROKERAGE, RETIREMENT, LOAN -> ReferenceData.TRANSFER;
-            case CREDIT_CARD -> in ? ReferenceData.REFUNDS : ReferenceData.UNCATEGORIZED;
-            default -> in ? ReferenceData.OTHER_INCOME : ReferenceData.UNCATEGORIZED;
+            case SAVINGS, BROKERAGE, RETIREMENT, LOAN -> CategoryRole.TRANSFER;
+            case CREDIT_CARD -> in ? CategoryRole.REFUNDS : CategoryRole.UNCATEGORIZED;
+            default -> in ? CategoryRole.OTHER_INCOME : CategoryRole.UNCATEGORIZED;
         };
     }
 
@@ -137,7 +140,7 @@ public class Categorizer {
     private Category guardSavings(Transaction t, Category chosen, Context ctx) {
         if (chosen != null && chosen.getKind() == CategoryKind.SAVINGS
                 && t.getAccount().getType().savingsLike()) {
-            Category transfer = ctx.named(ReferenceData.TRANSFER);
+            Category transfer = ctx.role(CategoryRole.TRANSFER);
             return transfer != null ? transfer : chosen;
         }
         return chosen;
@@ -163,9 +166,10 @@ public class Categorizer {
     record Compiled(CategoryRule rule, WordMatch words) {
     }
 
-    public record Context(List<Compiled> rules, Map<String, Category> byName) {
-        Category named(String name) {
-            return name == null ? null : byName.get(name.toLowerCase(Locale.ROOT));
+    public record Context(List<Compiled> rules, Map<CategoryRole, Category> byRole) {
+        /** The category doing this job; null only if none does (it always should). */
+        Category role(CategoryRole role) {
+            return role == null ? null : byRole.get(role);
         }
     }
 }

@@ -96,12 +96,12 @@ public class PlanController {
     public Map<String, Object> setTarget(@PathVariable Long categoryId, @RequestBody TargetBody body) {
         tx.executeWithoutResult(s -> {
             Category c = categories.findById(categoryId).orElseThrow();
-            if (c.getKind() != CategoryKind.EXPENSE) {
-                throw new IllegalArgumentException("Spending targets are for spending categories.");
-            }
             if (body.monthlyLimitCents() <= 0) {
                 targets.deleteByCategory(c);
                 return;
+            }
+            if (c.getKind() != CategoryKind.EXPENSE) {
+                throw new IllegalArgumentException("Spending targets are for spending categories.");
             }
             SpendingTarget t = targets.findByCategory(c).orElseGet(() -> new SpendingTarget(c, 0));
             t.setMonthlyLimitCents(body.monthlyLimitCents());

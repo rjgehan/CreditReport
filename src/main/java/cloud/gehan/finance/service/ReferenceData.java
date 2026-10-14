@@ -1,8 +1,10 @@
 package cloud.gehan.finance.service;
 
+import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 import org.slf4j.Logger;
@@ -19,6 +21,7 @@ import cloud.gehan.finance.model.AmountSign;
 import cloud.gehan.finance.model.AppSetting;
 import cloud.gehan.finance.model.Category;
 import cloud.gehan.finance.model.CategoryKind;
+import cloud.gehan.finance.model.CategoryRole;
 import cloud.gehan.finance.model.CategoryRule;
 import cloud.gehan.finance.model.CategorySource;
 import cloud.gehan.finance.model.Transaction;
@@ -37,8 +40,8 @@ public class ReferenceData implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(ReferenceData.class);
 
-    // Names the code files things under. The ones in REQUIRED can't be renamed, moved
-    // to another kind or deleted in the app, or defaults and transfers would lose their place.
+    // The starting names. The app finds these categories by their role (CategoryRole), not
+    // their name, so every one of them can be renamed or deleted; names are only for seeding.
     public static final String PAYCHECK = "Paycheck";
     public static final String INTEREST = "Interest & Dividends";
     public static final String OTHER_INCOME = "Other Income";
@@ -52,8 +55,14 @@ public class ReferenceData implements ApplicationRunner {
     public static final String TRANSFER = "Transfer";
     public static final String LOANS = "Loans";
 
-    public static final Set<String> REQUIRED = Set.of(PAYCHECK, OTHER_INCOME, UNCATEGORIZED, REFUNDS, SAVINGS, INVESTING,
-            RETIREMENT, CARD_PAYMENT, TRANSFER, LOANS);
+    /** Which starting category does each job, until you move it. */
+    static final Map<CategoryRole, String> ROLE_NAMES = new EnumMap<>(Map.ofEntries(
+            Map.entry(CategoryRole.PAYCHECK, PAYCHECK), Map.entry(CategoryRole.OTHER_INCOME, OTHER_INCOME),
+            Map.entry(CategoryRole.UNCATEGORIZED, UNCATEGORIZED), Map.entry(CategoryRole.REFUNDS, REFUNDS),
+            Map.entry(CategoryRole.LOANS, LOANS), Map.entry(CategoryRole.SUBSCRIPTIONS, "Subscriptions"),
+            Map.entry(CategoryRole.SAVINGS, SAVINGS), Map.entry(CategoryRole.INVESTING, INVESTING),
+            Map.entry(CategoryRole.RETIREMENT, RETIREMENT), Map.entry(CategoryRole.CARD_PAYMENT, CARD_PAYMENT),
+            Map.entry(CategoryRole.TRANSFER, TRANSFER)));
 
     /** Built-in rules sit at priority 10; rules you add start at 100. */
     public static final int BUILT_IN_PRIORITY = 10;
@@ -206,6 +215,7 @@ public class ReferenceData implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         tx.executeWithoutResult(s -> {
             seed();
+            ensureRoles();
             upgrade();
         });
     }
@@ -238,13 +248,15 @@ public class ReferenceData implements ApplicationRunner {
         Category travel = categories.findByNameIgnoreCase("Travel").orElse(null);
         List<CategoryRule> all = rules.findAll();
         for (CategoryRule r : all) {
-            if (shopping != null && r.getPriority() == BUILT_IN_PRIORITY && "Housing".equals(r.getCategory().getName())
+            if (shopping != null && setting(BUILT_IN_RULES) == null && r.getPriority() == BUILT_IN_PRIORITY
+                    && "Housing".equals(r.getCategory().getName())
                     && (r.getPattern().equals("HOME DEPOT") || r.getPattern().equals("LOWE"))) {
                 r.setCategory(shopping);
                 changed = true;
             }
         }
-        if (travel != null) {
+        // Only for databases from before these rules were seeded; one you delete stays deleted.
+        if (travel != null && setting(BUILT_IN_RULES) == null) {
             Set<String> have = new HashSet<>();
             all.forEach(r -> have.add(r.getPattern()));
             for (String p : List.of("RENT-A-CAR", "RENT A CAR", "HERTZ", "AVIS", "ENTERPRISE RENT", "BUDGET RENT")) {
@@ -300,6 +312,43 @@ public class ReferenceData implements ApplicationRunner {
         if (changed) {
             rules.flush();
             ruleService.reapply();
+        }
+    }
+
+    /**
+     * Every job has a category. Existing databases get the roles by the starting names;
+     * a job whose category is missing (only possible before roles existed) gets a fresh one.
+     * Subscriptions is optional: without it, Monthly expenses just doesn't split them out.
+     */
+    void ensureRoles() {
+        List<Category> all = categories.findAll();
+        for (CategoryRole role : CategoryRole.values()) {
+            if (all.stream().anyMatch(c -> c.hasRole(role))) {
+                continue;
+            }
+            Category c = categories.findByNameIgnoreCase(ROLE_NAMES.get(role))
+                    .filter(found -> found.getKind() == role.kind()).orElse(null);
+            if (c == null && role == CategoryRole.SUBSCRIPTIONS) {
+                // Renamed before roles existed: it's wherever the built-in NETFLIX rule files to.
+                c = rules.findAll().stream()
+                        .filter(r -> r.getPriority() == BUILT_IN_PRIORITY && "NETFLIX".equals(r.getPattern()))
+                        .map(CategoryRule::getCategory).filter(found -> found.getKind() == role.kind())
+                        .filter(found -> found.getRoles().isEmpty()).findFirst().orElse(null);
+            }
+            if (c == null && role != CategoryRole.SUBSCRIPTIONS) {
+                String icon = CATEGORIES.stream().filter(seed -> seed.name().equals(ROLE_NAMES.get(role))).map(Seed::icon)
+                        .findFirst().orElse(null);
+                String name = categories.findByNameIgnoreCase(ROLE_NAMES.get(role)).isPresent()
+                        ? ROLE_NAMES.get(role) + " (" + role.kind().name().toLowerCase(Locale.ROOT) + ")" : ROLE_NAMES.get(role);
+                c = new Category(name, role.kind(), colorFor(role.kind()), icon, categories.findAll().size());
+                c.setEarnedIncome(role == CategoryRole.PAYCHECK);
+                c.setFixedCost(role == CategoryRole.LOANS);
+                c = categories.save(c);
+                all.add(c);
+            }
+            if (c != null) {
+                c.addRoles(List.of(role));
+            }
         }
     }
 

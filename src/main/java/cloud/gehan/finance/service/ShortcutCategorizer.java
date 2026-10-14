@@ -23,6 +23,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import cloud.gehan.finance.config.AppProperties;
 import cloud.gehan.finance.model.Category;
 import cloud.gehan.finance.model.CategoryKind;
+import cloud.gehan.finance.model.CategoryRole;
 import cloud.gehan.finance.model.CategorySource;
 import cloud.gehan.finance.model.Transaction;
 import cloud.gehan.finance.repo.CategoryRepository;
@@ -45,7 +46,7 @@ public class ShortcutCategorizer {
     static final int BATCH = 40;
     static final int LOOKBACK_DAYS = 120;
     /** Where an unfiled transaction lands today; these are what the shortcut is for. */
-    static final Set<String> LEFTOVERS = Set.of(ReferenceData.UNCATEGORIZED, ReferenceData.OTHER_INCOME, ReferenceData.REFUNDS);
+    static final Set<CategoryRole> LEFTOVERS = Set.of(CategoryRole.UNCATEGORIZED, CategoryRole.OTHER_INCOME, CategoryRole.REFUNDS);
     // The id is the number right before the separator, so "1. 123 | Dining" and
     // "**123** | Dining" both read as 123; at most 18 digits, so it always fits a long.
     private static final Pattern LINE = Pattern.compile("(\\d{1,18})\\W*?\\s*[|:–—]\\s*\\**(.+?)\\**\\s*$");
@@ -188,7 +189,7 @@ public class ShortcutCategorizer {
                 continue;
             }
             boolean guess = t.getCategorySource() == null || t.getCategorySource() == CategorySource.DEFAULT;
-            boolean leftover = t.getCategory() == null || LEFTOVERS.contains(t.getCategory().getName());
+            boolean leftover = t.getCategory() == null || LEFTOVERS.stream().anyMatch(t.getCategory()::hasRole);
             // Something you've checked off is right as it is; the model never second-guesses you.
             if (guess && leftover && !t.isReviewed() && !t.isPending() && !t.getAccount().isHidden()
                     && t.getPairedTxnId() == null) {
@@ -203,7 +204,7 @@ public class ShortcutCategorizer {
     List<Category> choices() {
         return categories.findAllByOrderBySortOrderAscNameAsc().stream()
                 .filter(c -> c.getKind() == CategoryKind.EXPENSE || c.getKind() == CategoryKind.INCOME)
-                .filter(c -> !ReferenceData.UNCATEGORIZED.equals(c.getName()))
+                .filter(c -> !c.hasRole(CategoryRole.UNCATEGORIZED))
                 .toList();
     }
 

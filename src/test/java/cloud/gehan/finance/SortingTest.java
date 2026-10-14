@@ -89,7 +89,7 @@ class SortingTest {
         long checking = account("Category checking");
         JsonNode made = call(post("/api/categories"), "{\"name\":\"Climbing\",\"kind\":\"EXPENSE\"}");
         long climbing = made.get("id").asLong();
-        assertThat(made.get("required").asBoolean()).isFalse();
+        assertThat(made.get("roles").size()).isZero();
 
         long t = txn(checking, LocalDate.now(), -9000, "BOULDER GYM 0042").get("id").asLong();
         call(patch("/api/transactions/" + t), "{\"categoryId\":" + climbing + "}");
@@ -100,11 +100,35 @@ class SortingTest {
         assertThat(after.get("categoryName").asText()).isNotEqualTo("Bouldering");
         assertThat(after.get("reviewed").asBoolean()).isFalse();
 
-        // The ones the app files things into stay put.
+        // Any category can be renamed, even one the app files things into.
         long transfer = categoryId("Transfer");
+        call(patch("/api/categories/" + transfer), "{\"name\":\"Moves\"}");
+        // Deleting it needs somewhere for transfers to go, of the same kind...
         mvc.perform(with(delete("/api/categories/" + transfer))).andExpect(status().isBadRequest());
-        mvc.perform(with(patch("/api/categories/" + transfer)).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"name\":\"Moves\"}")).andExpect(status().isBadRequest());
+        mvc.perform(with(delete("/api/categories/" + transfer + "?moveTo=" + categoryId("Groceries"))))
+                .andExpect(status().isBadRequest());
+        // ...and then the job moves with them.
+        long cardPayment = categoryId("Credit Card Payment");
+        mvc.perform(with(delete("/api/categories/" + transfer + "?moveTo=" + cardPayment))).andExpect(status().isNoContent());
+        JsonNode merged = null;
+        for (JsonNode c : call(get("/api/categories"), null)) {
+            if (c.get("id").asLong() == cardPayment) {
+                merged = c;
+            }
+        }
+        assertThat(merged.get("roles").toString()).contains("TRANSFER").contains("CARD_PAYMENT");
+        // Money moving inside a savings account now lands there.
+        long savings = call(post("/api/accounts"), "{\"name\":\"Category savings\",\"type\":\"SAVINGS\",\"balanceCents\":0}")
+                .get("id").asLong();
+        assertThat(txn(savings, LocalDate.now(), -5000, "INTERNAL MOVE 1").get("categoryId").asLong()).isEqualTo(cardPayment);
+
+        // An ordinary category moves into another one, transactions and all.
+        long coffee = call(post("/api/categories"), "{\"name\":\"Coffee\",\"kind\":\"EXPENSE\"}").get("id").asLong();
+        long cup = txn(checking, LocalDate.now(), -550, "BLUE BOTTLE 22").get("id").asLong();
+        call(patch("/api/transactions/" + cup), "{\"categoryId\":" + coffee + "}");
+        long dining = categoryId("Dining");
+        mvc.perform(with(delete("/api/categories/" + coffee + "?moveTo=" + dining))).andExpect(status().isNoContent());
+        assertThat(find(checking, cup).get("categoryId").asLong()).isEqualTo(dining);
     }
 
     @Test

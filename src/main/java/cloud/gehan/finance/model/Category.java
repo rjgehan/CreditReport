@@ -38,6 +38,9 @@ public class Category {
     /** Expense kind only: the same every month (rent, loan payments), so not worth watching month to month. */
     private Boolean fixedCost;
 
+    /** The jobs the app gives this category (see CategoryRole), comma-separated. */
+    private String roles;
+
     protected Category() {
     }
 
@@ -66,4 +69,34 @@ public class Category {
     public boolean isFixedCost() { return Boolean.TRUE.equals(fixedCost); }
     public Boolean getFixedCost() { return fixedCost; }
     public void setFixedCost(Boolean fixedCost) { this.fixedCost = fixedCost; }
+
+    public java.util.Set<CategoryRole> getRoles() {
+        java.util.Set<CategoryRole> out = java.util.EnumSet.noneOf(CategoryRole.class);
+        if (roles != null) {
+            for (String r : roles.split(",")) {
+                if (!r.isBlank()) {
+                    try {
+                        out.add(CategoryRole.valueOf(r.trim()));
+                    } catch (IllegalArgumentException ignored) {
+                        // A role from a later version; this one doesn't know it.
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    public boolean hasRole(CategoryRole role) {
+        return getRoles().contains(role);
+    }
+
+    public void setRoles(java.util.Set<CategoryRole> set) {
+        roles = set.isEmpty() ? null : String.join(",", set.stream().map(Enum::name).sorted().toList());
+    }
+
+    public void addRoles(java.util.Collection<CategoryRole> more) {
+        java.util.Set<CategoryRole> all = getRoles();
+        all.addAll(more);
+        setRoles(all);
+    }
 }

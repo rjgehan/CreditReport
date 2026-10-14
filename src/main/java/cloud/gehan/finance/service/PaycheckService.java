@@ -22,6 +22,7 @@ import cloud.gehan.finance.model.AccountType;
 import cloud.gehan.finance.model.AmountSign;
 import cloud.gehan.finance.model.Category;
 import cloud.gehan.finance.model.CategoryKind;
+import cloud.gehan.finance.model.CategoryRole;
 import cloud.gehan.finance.model.CategoryRule;
 import cloud.gehan.finance.model.CategorySource;
 import cloud.gehan.finance.model.PayFrequency;
@@ -83,7 +84,7 @@ public class PaycheckService {
             months.put(current.minusMonths(i), new long[2]);
         }
         for (Transaction t : recent) {
-            if (t.getCategory() != null && ReferenceData.PAYCHECK.equals(t.getCategory().getName())
+            if (t.getCategory() != null && t.getCategory().hasRole(CategoryRole.PAYCHECK)
                     && t.getAmountCents() > 0 && !t.getAccount().isHidden()) {
                 long[] m = months.get(YearMonth.from(t.getDay()));
                 if (m != null) {
@@ -149,7 +150,7 @@ public class PaycheckService {
                 continue;
             }
             boolean tracked = similar.stream().allMatch(t -> t.getCategory() != null
-                    && ReferenceData.PAYCHECK.equals(t.getCategory().getName()));
+                    && t.getCategory().hasRole(CategoryRole.PAYCHECK));
             found.add(new Group(new Detected(e.getKey(), last.getDescription(), last.getAccount().getName(),
                     last.getAccount().isHidden(), frequency.name(), similar.size(), average,
                     average * frequency.perYear() / 12, last.getDay(), next(last.getDay(), gap, frequency, similar), tracked),
@@ -214,7 +215,7 @@ public class PaycheckService {
 
     /** Filing anything as Paycheck needs the Paycheck category to still exist. */
     public boolean canFile() {
-        return categories.findByNameIgnoreCase(ReferenceData.PAYCHECK).isPresent();
+        return categories.findByRole(CategoryRole.PAYCHECK).isPresent();
     }
 
     /**
@@ -229,8 +230,8 @@ public class PaycheckService {
         if (group == null) {
             return Filed.NONE;
         }
-        Category paycheck = categories.findByNameIgnoreCase(ReferenceData.PAYCHECK)
-                .orElseThrow(() -> new IllegalStateException("The Paycheck category was deleted; create it again first."));
+        Category paycheck = categories.findByRole(CategoryRole.PAYCHECK)
+                .orElseThrow(() -> new IllegalStateException("No category takes pay."));
 
         // One rule per payer however many times it's tapped. A rule of yours with the same
         // words but another purpose is left as it is, and so is the order you've ranked yours in.

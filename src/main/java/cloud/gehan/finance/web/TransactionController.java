@@ -29,6 +29,7 @@ import cloud.gehan.finance.model.Account;
 import cloud.gehan.finance.model.AmountSign;
 import cloud.gehan.finance.model.Category;
 import cloud.gehan.finance.model.CategoryKind;
+import cloud.gehan.finance.model.CategoryRole;
 import cloud.gehan.finance.model.CategoryRule;
 import cloud.gehan.finance.model.CategorySource;
 import cloud.gehan.finance.model.Transaction;
@@ -42,8 +43,6 @@ import cloud.gehan.finance.service.RuleService;
 import cloud.gehan.finance.service.StatementImporter;
 import cloud.gehan.finance.service.SyncService;
 import cloud.gehan.finance.web.Views.TxnView;
-import jakarta.persistence.criteria.Join;
-import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -98,7 +97,7 @@ public class TransactionController {
             @RequestParam(required = false) String review,
             @RequestParam(required = false) LocalDate beforeDay, @RequestParam(required = false) Long beforeId,
             @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "50") int size) {
-        Specification<Transaction> filters = filters(from, to, account, category, kind, q);
+        Specification<Transaction> filters = filters(from, to, account, category, kind, q, uncategorizedId());
         Specification<Transaction> spec = "todo".equals(review) ? filters.and(UNREVIEWED) : filters;
         int pageSize = Math.max(1, Math.min(size, 200));
         // "More" continues after the last row shown rather than at a page number, so rows
@@ -134,7 +133,7 @@ public class TransactionController {
             @RequestParam(required = false) String q, @RequestBody @Valid ReviewBody body) {
         int changed = tx.execute(s -> {
             int n = 0;
-            for (Transaction t : txns.findAll(filters(from, to, account, category, kind, q))) {
+            for (Transaction t : txns.findAll(filters(from, to, account, category, kind, q, uncategorizedId()))) {
                 if (t.isReviewed() != body.reviewed()) {
                     t.setReviewed(body.reviewed());
                     n++;
@@ -169,8 +168,13 @@ public class TransactionController {
         });
     }
 
+    /** Where spending nothing else claims goes; "No category" means it or none at all. */
+    private Long uncategorizedId() {
+        return categories.findByRole(CategoryRole.UNCATEGORIZED).map(Category::getId).orElse(null);
+    }
+
     private static Specification<Transaction> filters(LocalDate from, LocalDate to, Long account, String category,
-            String kind, String q) {
+            String kind, String q, Long uncategorizedId) {
         return (root, query, cb) -> {
             List<Predicate> where = new ArrayList<>();
             if (from != null) {
@@ -185,8 +189,8 @@ public class TransactionController {
                 where.add(cb.isFalse(root.get("account").get("hidden")));
             }
             if ("none".equals(category)) {
-                Join<Transaction, Category> c = root.join("category", JoinType.LEFT);
-                where.add(cb.or(cb.isNull(root.get("category")), cb.equal(c.get("name"), ReferenceData.UNCATEGORIZED)));
+                where.add(uncategorizedId == null ? cb.isNull(root.get("category"))
+                        : cb.or(cb.isNull(root.get("category")), cb.equal(root.get("category").get("id"), uncategorizedId)));
             } else if (category != null && !category.isBlank()) {
                 where.add(cb.equal(root.get("category").get("id"), Long.valueOf(category)));
             }

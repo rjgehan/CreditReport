@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import cloud.gehan.finance.config.AppProperties;
 import cloud.gehan.finance.model.Account;
+import cloud.gehan.finance.model.CategoryRole;
 import cloud.gehan.finance.model.SavingsGoal;
 import cloud.gehan.finance.model.SpendingTarget;
 import cloud.gehan.finance.repo.AccountRepository;
@@ -111,7 +112,7 @@ public class TargetService {
                     current = b.saved();
                 } else {
                     current = b.savedIn(categoryId);
-                    if (ReferenceData.RETIREMENT.equals(categoryName)) {
+                    if (g.getCategory().hasRole(CategoryRole.RETIREMENT)) {
                         current += b.savedPreTax();
                     }
                 }

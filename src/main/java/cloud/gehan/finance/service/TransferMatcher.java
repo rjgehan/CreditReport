@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 import cloud.gehan.finance.model.AccountType;
 import cloud.gehan.finance.model.Category;
 import cloud.gehan.finance.model.CategoryKind;
+import cloud.gehan.finance.model.CategoryRole;
 import cloud.gehan.finance.model.CategorySource;
 import cloud.gehan.finance.model.Transaction;
 
@@ -30,7 +31,6 @@ import cloud.gehan.finance.model.Transaction;
 public class TransferMatcher {
 
     static final int MAX_DAYS_APART = 4;
-    static final String LOANS = "Loans";
 
     /** @return how many pairs were made */
     public int match(List<Transaction> candidates, Categorizer.Context ctx) {
@@ -87,38 +87,38 @@ public class TransferMatcher {
 
         AccountType from = out.getAccount().getType();
         AccountType to = in.getAccount().getType();
-        String outCategory;
-        String inCategory;
+        CategoryRole outCategory;
+        CategoryRole inCategory;
         if (to.savingsLike() && !from.savingsLike()) {
             // Money put away. The checking side carries it so it is counted once.
             outCategory = savingsCategory(to);
-            inCategory = ReferenceData.TRANSFER;
+            inCategory = CategoryRole.TRANSFER;
         } else if (from.savingsLike() && !to.savingsLike()) {
             // Money taken back out: a positive amount in a savings category,
             // which nets against what was saved this month.
-            outCategory = ReferenceData.TRANSFER;
+            outCategory = CategoryRole.TRANSFER;
             inCategory = savingsCategory(from);
         } else if (to == AccountType.LOAN) {
             // A loan payment is spending even when the loan itself is tracked; the
             // loan account's side is just its balance going down.
-            outCategory = LOANS;
-            inCategory = ReferenceData.TRANSFER;
+            outCategory = CategoryRole.LOANS;
+            inCategory = CategoryRole.TRANSFER;
         } else if (to == AccountType.CREDIT_CARD) {
-            outCategory = ReferenceData.CARD_PAYMENT;
-            inCategory = ReferenceData.CARD_PAYMENT;
+            outCategory = CategoryRole.CARD_PAYMENT;
+            inCategory = CategoryRole.CARD_PAYMENT;
         } else {
-            outCategory = ReferenceData.TRANSFER;
-            inCategory = ReferenceData.TRANSFER;
+            outCategory = CategoryRole.TRANSFER;
+            inCategory = CategoryRole.TRANSFER;
         }
-        assign(out, ctx.named(outCategory));
-        assign(in, ctx.named(inCategory));
+        assign(out, ctx.role(outCategory));
+        assign(in, ctx.role(inCategory));
     }
 
-    private static String savingsCategory(AccountType type) {
+    private static CategoryRole savingsCategory(AccountType type) {
         return switch (type) {
-            case BROKERAGE -> ReferenceData.INVESTING;
-            case RETIREMENT -> ReferenceData.RETIREMENT;
-            default -> ReferenceData.SAVINGS;
+            case BROKERAGE -> CategoryRole.INVESTING;
+            case RETIREMENT -> CategoryRole.RETIREMENT;
+            default -> CategoryRole.SAVINGS;
         };
     }
 
@@ -128,8 +128,9 @@ public class TransferMatcher {
      */
     static boolean waitingForYou(Transaction t) {
         return t.getCategorySource() == CategorySource.RULE && t.getCategory() != null
-                && (ReferenceData.UNCATEGORIZED.equals(t.getCategory().getName())
-                        || ReferenceData.OTHER_INCOME.equals(t.getCategory().getName()));
+                && (t.getCategory().hasRole(CategoryRole.UNCATEGORIZED)
+                        || t.getCategory().hasRole(CategoryRole.OTHER_INCOME))
+                && ReferenceData.PEOPLE_WORDS.stream().anyMatch(w -> WordMatch.of(w).in(t.matchText()));
     }
 
     /** Rules and you outrank the pairing; it only replaces guesses and generic transfers. */

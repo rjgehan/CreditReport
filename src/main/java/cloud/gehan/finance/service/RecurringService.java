@@ -21,6 +21,7 @@ import cloud.gehan.finance.config.AppProperties;
 import cloud.gehan.finance.model.Cadence;
 import cloud.gehan.finance.model.Category;
 import cloud.gehan.finance.model.CategoryKind;
+import cloud.gehan.finance.model.CategoryRole;
 import cloud.gehan.finance.model.RecurringCharge;
 import cloud.gehan.finance.model.RecurringKind;
 import cloud.gehan.finance.model.Transaction;
@@ -172,7 +173,7 @@ public class RecurringService {
     private static boolean expense(Transaction t) {
         Category c = t.getCategory();
         boolean spending = c == null || c.getKind() == CategoryKind.EXPENSE;
-        boolean catchAll = c == null || ReferenceData.UNCATEGORIZED.equals(c.getName());
+        boolean catchAll = c == null || c.hasRole(CategoryRole.UNCATEGORIZED);
         return t.getAmountCents() < 0 && spending && !t.isPending() && !t.getAccount().isHidden()
                 && t.getPairedTxnId() == null
                 && !(catchAll && TRANSFER.matcher(WordMatch.loosen(t.matchText())).find());
@@ -262,7 +263,7 @@ public class RecurringService {
             return null;
         }
         RecurringKind kind = c != null && c.isFixedCost() ? RecurringKind.BILL
-                : c != null && "Subscriptions".equals(c.getName()) ? RecurringKind.SUBSCRIPTION : RecurringKind.OTHER;
+                : c != null && c.hasRole(CategoryRole.SUBSCRIPTIONS) ? RecurringKind.SUBSCRIPTION : RecurringKind.OTHER;
         long amount = -last.getAmountCents();
         LocalDate next = cadence.after(last.getDay());
         boolean active = !today.isAfter(next.plusDays(Math.max(5, gap / 2)));

@@ -18,6 +18,7 @@ import cloud.gehan.finance.model.Account;
 import cloud.gehan.finance.model.AccountType;
 import cloud.gehan.finance.model.Category;
 import cloud.gehan.finance.model.CategoryKind;
+import cloud.gehan.finance.model.CategoryRole;
 import cloud.gehan.finance.model.GoalType;
 import cloud.gehan.finance.model.SavingsGoal;
 import cloud.gehan.finance.model.SpendingTarget;
@@ -51,8 +52,7 @@ public class TargetSuggestions {
     static final Set<String> ESSENTIALS = Set.of("Groceries", "Utilities", "Health", "Insurance", "Transportation",
             "Education", "Gas");
     /** Never targeted: catch-alls, refunds and things you can't budget down. */
-    static final Set<String> SKIP = Set.of(ReferenceData.UNCATEGORIZED, ReferenceData.REFUNDS, "Fees & Interest",
-            "Taxes");
+    static final Set<String> SKIP = Set.of("Fees & Interest", "Taxes");
     /** A starting point where there's no history yet: single, no car, Hoboken. */
     static final Map<String, Long> TYPICAL = Map.of(
             "Groceries", 400_00L, "Dining", 350_00L, "Transportation", 120_00L, "Utilities", 150_00L,
@@ -158,7 +158,7 @@ public class TargetSuggestions {
             if (existing) {
                 // Yours, whatever the history says: listed and counted, never changed.
                 limit = mine.get(c.getId()).getMonthlyLimitCents();
-            } else if (SKIP.contains(c.getName())) {
+            } else if (SKIP.contains(c.getName()) || c.hasRole(CategoryRole.UNCATEGORIZED) || c.hasRole(CategoryRole.REFUNDS)) {
                 continue;
             } else if (average != null && average >= MIN_AVERAGE_CENTS) {
                 limit = roundUp(average);

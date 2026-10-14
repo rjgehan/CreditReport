@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import cloud.gehan.finance.model.Category;
 import cloud.gehan.finance.model.CategoryKind;
+import cloud.gehan.finance.model.CategoryRole;
 import cloud.gehan.finance.model.Paystub;
 import cloud.gehan.finance.model.Transaction;
 import cloud.gehan.finance.repo.PaystubRepository;
@@ -41,7 +42,8 @@ public class FlowService {
      * @param earned income kind: counts as income (work, side hustles), not interest or stray deposits
      * @param fixed expense kind: the same every month (rent, loans)
      */
-    public record Bucket(Long categoryId, String name, String icon, CategoryKind kind, boolean earned, boolean fixed) {
+    public record Bucket(Long categoryId, String name, String icon, CategoryKind kind, boolean earned, boolean fixed,
+            boolean paycheck, boolean retirement) {
     }
 
     /** One employer's paychecks in the period, expanded from net back to gross. */
@@ -167,7 +169,7 @@ public class FlowService {
                         continue;
                     }
                     // Only a deposit into checking or savings stands for a whole paystub's deductions.
-                    Paystub stub = ReferenceData.PAYCHECK.equals(bucket.name()) && amount > 0
+                    Paystub stub = bucket.paycheck() && amount > 0
                             && t.getAccount().getType().receivesPay() ? stubFor(t, stubs, stubPatterns) : null;
                     if (stub != null) {
                         long[] tally = payTally.get(stub);
@@ -214,11 +216,12 @@ public class FlowService {
     static Bucket bucket(Transaction t) {
         Category c = t.getCategory();
         if (c != null) {
-            return new Bucket(c.getId(), c.getName(), c.getIcon(), c.getKind(), c.isEarnedIncome(), c.isFixedCost());
+            return new Bucket(c.getId(), c.getName(), c.getIcon(), c.getKind(), c.isEarnedIncome(), c.isFixedCost(),
+                    c.hasRole(CategoryRole.PAYCHECK), c.hasRole(CategoryRole.RETIREMENT));
         }
         return t.getAmountCents() > 0
-                ? new Bucket(null, ReferenceData.OTHER_INCOME, "💵", CategoryKind.INCOME, false, false)
-                : new Bucket(null, ReferenceData.UNCATEGORIZED, "❔", CategoryKind.EXPENSE, false, false);
+                ? new Bucket(null, ReferenceData.OTHER_INCOME, "💵", CategoryKind.INCOME, false, false, false, false)
+                : new Bucket(null, ReferenceData.UNCATEGORIZED, "❔", CategoryKind.EXPENSE, false, false, false, false);
     }
 
     private static Map<Bucket, Long> sortDesc(Map<Bucket, Long> map) {
@@ -313,7 +316,7 @@ public class FlowService {
         // Pre-tax 401(k) and the employer match land in Retirement next to any
         // retirement contributions made from cash.
         Bucket retirementBucket = b.savings().keySet().stream()
-                .filter(k -> ReferenceData.RETIREMENT.equals(k.name())).findFirst().orElse(null);
+                .filter(Bucket::retirement).findFirst().orElse(null);
         for (Map.Entry<Bucket, Long> e : b.savings().entrySet()) {
             if (e.getValue() <= 0) {
                 continue;

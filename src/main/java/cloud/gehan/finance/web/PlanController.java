@@ -35,6 +35,7 @@ import cloud.gehan.finance.repo.SavingsGoalRepository;
 import cloud.gehan.finance.repo.SpendingTargetRepository;
 import cloud.gehan.finance.service.PaycheckService;
 import cloud.gehan.finance.service.TargetService;
+import cloud.gehan.finance.service.TargetSuggestions;
 import cloud.gehan.finance.web.Views.PaystubView;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -46,6 +47,7 @@ import jakarta.validation.constraints.NotNull;
 public class PlanController {
 
     private final TargetService targetService;
+    private final TargetSuggestions suggestions;
     private final PaycheckService paychecks;
     private final SpendingTargetRepository targets;
     private final SavingsGoalRepository goals;
@@ -55,10 +57,11 @@ public class PlanController {
     private final TransactionTemplate tx;
     private final AppProperties props;
 
-    public PlanController(TargetService targetService, PaycheckService paychecks, SpendingTargetRepository targets,
-            SavingsGoalRepository goals, PaystubRepository paystubs, CategoryRepository categories,
-            AccountRepository accounts, TransactionTemplate tx, AppProperties props) {
+    public PlanController(TargetService targetService, TargetSuggestions suggestions, PaycheckService paychecks,
+            SpendingTargetRepository targets, SavingsGoalRepository goals, PaystubRepository paystubs,
+            CategoryRepository categories, AccountRepository accounts, TransactionTemplate tx, AppProperties props) {
         this.targetService = targetService;
+        this.suggestions = suggestions;
         this.paychecks = paychecks;
         this.targets = targets;
         this.goals = goals;
@@ -75,6 +78,17 @@ public class PlanController {
     }
 
     public record TargetBody(long monthlyLimitCents) {
+    }
+
+    /** Targets, a savings target and an emergency fund worked out from your own numbers. */
+    @GetMapping("/targets/suggest")
+    public TargetSuggestions.Suggestion suggest() {
+        return suggestions.suggest();
+    }
+
+    @PostMapping("/targets/suggest")
+    public TargetSuggestions.Applied applySuggestion() {
+        return suggestions.apply();
     }
 
     /** Sets a category's monthly cap; zero removes it. */

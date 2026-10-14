@@ -94,8 +94,12 @@ export async function render(params, app) {
 
   root.append(h('div', { class: 'section-title' }, 'More'),
     h('section', { class: 'card flush' },
+      h('a', { class: 'row tap', href: '#/recurring' },
+        h('div', { class: 'main' }, h('div', { class: 'title' }, 'Monthly expenses'),
+          h('div', { class: 'meta' }, 'Subscriptions, bills and everything else that comes out on its own')),
+        icon('chevron', 18)),
       h('a', { class: 'row tap', href: '#/bills' },
-        h('div', { class: 'main' }, h('div', { class: 'title' }, 'Bills'),
+        h('div', { class: 'main' }, h('div', { class: 'title' }, 'Rent and loans'),
           h('div', { class: 'meta' }, 'Rent and loans: what you\'ve paid, month by month')),
         icon('chevron', 18)),
       h('a', { class: 'row tap', href: '#/categories' },

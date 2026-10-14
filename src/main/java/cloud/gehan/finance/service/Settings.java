@@ -37,6 +37,28 @@ public class Settings {
         });
     }
 
+    static final String RECURRING_HIDDEN = "recurring-hidden";
+
+    /** Regular charges you said aren't regular, by their key on Monthly expenses. */
+    public java.util.Set<String> hiddenRecurring() {
+        return repo.findById(RECURRING_HIDDEN)
+                .map(s -> new java.util.LinkedHashSet<>(java.util.Arrays.asList(s.getValue().split("\n"))))
+                .map(set -> { set.remove(""); return (java.util.Set<String>) set; })
+                .orElseGet(java.util.LinkedHashSet::new);
+    }
+
+    public void setHiddenRecurring(java.util.Set<String> keys) {
+        tx.executeWithoutResult(s -> {
+            if (keys.isEmpty()) {
+                repo.deleteById(RECURRING_HIDDEN);
+                return;
+            }
+            AppSetting setting = repo.findById(RECURRING_HIDDEN).orElseGet(() -> new AppSetting(RECURRING_HIDDEN, ""));
+            setting.setValue(String.join("\n", keys));
+            repo.save(setting);
+        });
+    }
+
     static final String SHORTCUT_TOKEN = "shortcut-token-sha256";
 
     /** SHA-256 of the iPhone shortcut's token, or null if none was ever made. */

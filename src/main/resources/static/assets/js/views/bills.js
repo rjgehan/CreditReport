@@ -49,7 +49,7 @@ export async function render(params, app) {
     }
     root.append(h('section', { class: 'card flush' },
       h('div', { class: 'card-head', style: { padding: '14px 16px 2px' } },
-        h('h2', null, `${b.icon ? b.icon + ' ' : ''}${b.name}`), h('strong', null, money(b.thisYearCents))),
+        h('h2', null, b.name), h('strong', null, money(b.thisYearCents))),
       h('div', { class: 'meta', style: { padding: '0 16px 10px', color: 'var(--ink-3)', fontSize: '13px' } },
         `${new Date().getFullYear()} so far · ${money(b.allTimeCents)} in all${b.since ? ' since ' + monthLabel(b.since.slice(0, 7)) : ''}`),
       list,
@@ -59,7 +59,7 @@ export async function render(params, app) {
   }
 
   if (months < MAX_MONTHS) {
-    root.append(h('button', { class: 'btn', style: { width: '100%' }, onclick: () => app.go('#/bills?months=' + (months + 12)) },
+    root.append(h('button', { class: 'btn', style: { width: '100%' }, onclick: () => app.go('#/bills?months=' + (months + 12) + (params.get('from') ? '&from=' + params.get('from') : '')) },
       'Show earlier months'));
   }
   root.append(h('p', { class: 'hint', style: { margin: '0 4px' } },

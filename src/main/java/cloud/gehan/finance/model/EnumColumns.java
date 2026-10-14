@@ -51,6 +51,16 @@ public final class EnumColumns {
     }
 
     @Converter(autoApply = true)
+    public static class Cadences extends ByName<Cadence> {
+        public Cadences() { super(Cadence.class); }
+    }
+
+    @Converter(autoApply = true)
+    public static class RecurringKinds extends ByName<RecurringKind> {
+        public RecurringKinds() { super(RecurringKind.class); }
+    }
+
+    @Converter(autoApply = true)
     public static class CategoryKinds extends ByName<CategoryKind> {
         public CategoryKinds() { super(CategoryKind.class); }
     }

@@ -12,6 +12,7 @@ import * as plan from './views/plan.js';
 import * as investment from './views/investment.js';
 import * as shortcut from './views/shortcut.js';
 import * as bills from './views/bills.js';
+import * as recurring from './views/recurring.js';
 import * as categoriesView from './views/categories.js';
 
 // Tabs first; the rest are screens reached from a tab, with a back button to it.
@@ -26,7 +27,8 @@ const ROUTES = [
   { path: 'paychecks', title: 'Paychecks', parent: 'flow', view: { render: plan.paychecksPage } },
   { path: 'rules', title: 'Rules', parent: 'activity', view: { render: plan.rulesPage } },
   { path: 'categories', title: 'Categories', parent: 'activity', view: categoriesView },
-  { path: 'bills', title: 'Bills', parent: 'accounts', view: bills },
+  { path: 'recurring', title: 'Monthly expenses', parent: 'accounts', view: recurring },
+  { path: 'bills', title: 'Rent and loans', parent: 'accounts', view: bills },
   { path: 'investment', title: 'Investments', parent: 'accounts', view: investment },
   { path: 'shortcut', title: 'iPhone shortcut', parent: 'accounts', view: shortcut },
 ];
@@ -59,7 +61,9 @@ async function render() {
   const tab = route.parent || route.path;
   tabbar.querySelectorAll('a').forEach((a) => a.classList.toggle('active', a.dataset.path === tab));
   back.hidden = !route.parent;
-  back.setAttribute('href', '#/' + (route.parent || 'home'));
+  // A screen opened from another sub-screen (Rent and loans from Monthly expenses) goes back there.
+  const from = params.get('from');
+  back.setAttribute('href', '#/' + (from && ROUTES.some((r) => r.path === from) ? from : route.parent || 'home'));
   const token = {};
   current = token;
   view.classList.add('loading');

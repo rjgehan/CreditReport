@@ -25,6 +25,7 @@ async function targets(root, refresh) {
   const [progress, cats, settings] = await Promise.all([
     get('/api/targets?month=' + thisMonth()), categories(), get('/api/settings')]);
   const target = settings.savingsTargetCents;
+  root.append(fillButton(refresh, progress.spending.length === 0 && target === null));
   // The savings target is set once and rarely changes, so it lives here rather
   // than on Home; Home's left-to-spend already has it taken out.
   root.append(h('section', { class: 'card flush' },
@@ -71,6 +72,74 @@ function targetSheet(cats, existing, refresh) {
   });
 }
 
+// --- Filled in for you ------------------------------------------------------------------
+
+function fillButton(refresh, prominent) {
+  const b = h('button', { class: prominent ? 'btn primary' : 'btn' }, 'Fill in for me');
+  b.addEventListener('click', busy(b, () => fillSheet(refresh)));
+  return h('div', null, b);
+}
+
+/** What the server works out from your pay and spending, shown before anything is saved. */
+async function fillSheet(refresh) {
+  const s = await get('/api/targets/suggest');
+  sheet('Fill in for me', (body, sh) => {
+    const line = (title, value, meta) => h('div', { class: 'row' },
+      h('div', { class: 'main' }, h('div', { class: 'title' }, title), meta ? h('div', { class: 'meta wrap' }, meta) : null),
+      h('div', { class: 'amount' }, value));
+    const facts = h('div', { class: 'list' });
+    facts.append(line('Take-home pay', s.incomeCents === null ? '—' : money(s.incomeCents),
+      s.incomeCents === null ? 'Not known yet: tap This is my pay on Home first' : 'A month, from your paychecks'));
+    facts.append(line('Bills', s.billsCents === null ? '—' : money(s.billsCents),
+      s.billsCents === null ? 'Not known until a full month of bank history' : 'Rent, loans and other monthly bills'));
+    if (s.otherCents) facts.append(line('Everything else', money(s.otherCents), 'Venmo, Zelle and other spending no target covers'));
+    if (s.savingsTargetSet) {
+      facts.append(line('Savings target', money(s.savingsTargetCents), 'Yours; it stays'));
+    } else if (s.savingsTargetCents) {
+      facts.append(line('Savings target', money(s.savingsTargetCents),
+        s.savingsTrimmed ? 'What fits after bills and needs (a fifth of take-home doesn\'t)' : 'Kept each month: a fifth of take-home'));
+    } else if (s.incomeCents !== null) {
+      facts.append(line('Savings target', '—', 'Nothing fits after bills and needs, so none is set'));
+    }
+    const list = h('div', { class: 'list' });
+    for (const t of s.targets) {
+      const meta = t.existing ? 'Yours already; it stays'
+        : t.averageCents === null ? 'Typical without a car in Hoboken'
+          : t.limitCents < t.averageCents ? `You spend about ${money(t.averageCents)}; trimmed to fit`
+            : `You spend about ${money(t.averageCents)}`;
+      list.append(line(t.name, money(t.limitCents), meta));
+    }
+    if (!s.targets.length) list.append(h('div', { class: 'empty' }, 'No spending to base targets on yet.'));
+    const rest = h('div', { class: 'list' });
+    if (s.incomeCents !== null) {
+      rest.append(line(s.unplannedCents >= 0 ? 'Left unplanned' : 'Short each month', money(Math.abs(s.unplannedCents)),
+        s.unplannedCents >= 0 ? 'A cushion for the month' : 'All of this comes to more than take-home'));
+    }
+    if (s.goal) {
+      rest.append(line(s.goal.name, money(s.goal.targetCents),
+        `Three months of bills and needs, in ${s.goal.accountName} by ${shortDate(s.goal.targetDate)}`));
+    }
+    const box = (el) => h('div', { style: { border: '1px solid var(--border)', borderRadius: '12px', marginBottom: '12px', overflow: 'hidden' } }, el);
+    const use = h('button', { class: 'btn primary' }, 'Use these');
+    use.addEventListener('click', busy(use, async () => {
+      const r = await post('/api/targets/suggest', {});
+      sh.close();
+      const parts = [];
+      if (r.targets) parts.push(`${r.targets} target${r.targets === 1 ? '' : 's'}`);
+      if (r.savingsTarget) parts.push('savings target');
+      if (r.goal) parts.push('emergency fund');
+      toast(parts.length ? 'Added ' + parts.join(', ') : 'Nothing new to add');
+      refresh();
+    }));
+    body.append(
+      h('p', { class: 'hint', style: { margin: '0 0 12px' } }, s.months
+        ? `From your last ${s.months} full month${s.months === 1 ? '' : 's'} of spending. Change any of them later.`
+        : 'No full month of history yet, so these are typical amounts. Change any of them later.'),
+      box(facts), h('div', { class: 'cat-group' }, 'Monthly targets'), box(list), rest.childElementCount ? box(rest) : null,
+      h('div', { class: 'btn-row' }, use));
+  });
+}
+
 // --- Goals ---------------------------------------------------------------------------
 
 async function goals(root, refresh) {
@@ -85,6 +154,7 @@ async function goals(root, refresh) {
   }
   if (!progress.goals.length) list.append(h('div', { class: 'empty' }, 'No goals yet.'));
   card.append(list);
+  if (!progress.goals.length) root.append(fillButton(refresh, true));
   root.append(card, h('div', null, h('button', { class: 'btn primary', onclick: () => goalSheet(cats, accounts, null, refresh) }, icon('plus', 18), 'Add a goal')));
 }
 

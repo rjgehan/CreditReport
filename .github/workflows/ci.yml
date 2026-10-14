@@ -18,4 +18,4 @@ jobs:
       - name: Run tests
         run: ./mvnw -B verify
       - name: Syntax-check the front end
-        run: for f in $(find src/main/resources/static -name '*.js'); do node --check "$f" || exit 1; done
+        run: sh tools/check-js.sh

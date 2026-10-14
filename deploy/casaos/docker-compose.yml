@@ -1,4 +1,9 @@
-# Finance on CasaOS - the app and its own Cloudflare tunnel, one stack.
+# Finance on CasaOS, reached over Tailscale.
+#
+# There is no tunnel and nothing on the public internet: the app listens on a
+# LAN port, and from anywhere else you reach it through the server's Tailscale
+# address (http://<server tailscale name or 100.x address>:8095). Tailscale is
+# the gate, so the sign-in is a simple password you enter once a year per device.
 #
 # BEFORE YOU IMPORT
 #
@@ -10,12 +15,6 @@
 # 2. Teller (free): put certificate.pem and private_key.pem from the Teller
 #    dashboard in /DATA/AppData/finance/teller/ and fill in TELLER_APPLICATION_ID.
 #
-# 3. A NEW Cloudflare tunnel (Zero Trust -> Networks -> Tunnels -> Create ->
-#    Docker); paste its token below. Public hostname:
-#      finance . gehan.cloud  ->  HTTP  ->  finance:8080
-#    Strongly consider a Cloudflare Access policy on that hostname too (email
-#    one-time PIN to your address), so the login page itself isn't public.
-#
 # Then: CasaOS -> + -> Custom Install -> Import -> paste -> fill in CHANGE ME.
 
 name: finance
@@ -24,12 +23,16 @@ services:
   finance:
     image: ghcr.io/rjgehan/creditreport:latest
     container_name: finance
-    hostname: finance
     restart: unless-stopped
+    network_mode: bridge
     deploy:
       resources:
         limits:
           memory: 768M
+    ports:
+      - target: 8080
+        published: "8095"
+        protocol: tcp
     environment:
       # CHANGE ME. Your sign-in. A bcrypt hash ({bcrypt}$2a$...) works too.
       - APP_USERNAME=me
@@ -41,8 +44,6 @@ services:
       - TELLER_ENVIRONMENT=development
       - TELLER_CERTIFICATE=/data/teller/certificate.pem
       - TELLER_PRIVATE_KEY=/data/teller/private_key.pem
-      # Behind Cloudflare, so login throttling sees the visitor, not the tunnel.
-      - CLIENT_IP_HEADER=CF-Connecting-IP
       - APP_DEMO_DATA=false
       - APP_DATA_DIR=/data
       - TZ=America/New_York
@@ -50,10 +51,6 @@ services:
       - type: bind
         source: /DATA/AppData/finance
         target: /data
-    networks:
-      - finance
-    # No published port: the tunnel is the only way in, and the session cookie
-    # is Secure so plain-HTTP LAN access would not log anyone in anyway.
     security_opt:
       - no-new-privileges:true
     healthcheck:
@@ -80,32 +77,14 @@ services:
         - container: TELLER_APPLICATION_ID
           description:
             en_us: From the Teller dashboard (starts with app_).
+      ports:
+        - container: "8080"
+          description:
+            en_us: Web UI. Open it over Tailscale from your phone.
       volumes:
         - container: /data
           description:
             en_us: finance.db and the Teller certificate. Must be owned by UID 10001.
-
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: finance-tunnel
-    restart: unless-stopped
-    command: tunnel --no-autoupdate run
-    environment:
-      # CHANGE ME. Token for a NEW tunnel, not one already serving another site.
-      - TUNNEL_TOKEN=PASTE_YOUR_TUNNEL_TOKEN_HERE
-    networks:
-      - finance
-    depends_on:
-      - finance
-    security_opt:
-      - no-new-privileges:true
-    labels:
-      com.centurylinklabs.watchtower.enable: "true"
-
-networks:
-  finance:
-    name: finance
-    driver: bridge
 
 x-casaos:
   architectures:
@@ -122,11 +101,10 @@ x-casaos:
   description:
     en_us: >-
       Self-hosted personal finance: bank and card syncing through Teller,
-      investments priced from holdings, a cash-flow Sankey, spending targets and
-      savings goals.
+      investments priced from holdings, a cash-flow Sankey, spending targets,
+      savings goals and a monthly score.
   icon: https://raw.githubusercontent.com/rjgehan/CreditReport/main/src/main/resources/static/icons/apple-touch-icon.png
-  scheme: https
-  hostname: finance.gehan.cloud
+  scheme: http
   index: /
-  port_map: "8080"
+  port_map: "8095"
   store_app_id: finance

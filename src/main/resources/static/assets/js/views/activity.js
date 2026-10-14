@@ -36,7 +36,8 @@ export async function render(params, app) {
   const more = h('button', { class: 'btn', style: { width: '100%', marginTop: '12px' }, hidden: true }, 'Load more');
 
   const filters = h('div', { class: 'toolbar' },
-    h('div', { class: 'search' }, searchIcon(), search));
+    h('div', { class: 'search' }, searchIcon(), search),
+    h('a', { class: 'btn small', href: '#/rules' }, 'Rules'));
   const selects = h('div', { class: 'toolbar', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' } },
     catSelect, acctSelect, monthSelect);
   root.append(filters, selects, summary, listCard, more);

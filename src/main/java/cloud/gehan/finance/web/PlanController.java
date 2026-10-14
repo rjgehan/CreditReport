@@ -44,7 +44,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
-/** Targets, goals and paychecks: the Plan tab. */
+/** Spending targets, goals and paychecks: the screens behind Home's cards and Flow's income. */
 @RestController
 @RequestMapping("/api")
 public class PlanController {

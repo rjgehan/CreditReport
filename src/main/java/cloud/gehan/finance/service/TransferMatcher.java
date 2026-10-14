@@ -30,6 +30,7 @@ import cloud.gehan.finance.model.Transaction;
 public class TransferMatcher {
 
     static final int MAX_DAYS_APART = 4;
+    static final String LOANS = "Loans";
 
     /** @return how many pairs were made */
     public int match(List<Transaction> candidates, Categorizer.Context ctx) {
@@ -97,6 +98,11 @@ public class TransferMatcher {
             // which nets against what was saved this month.
             outCategory = ReferenceData.TRANSFER;
             inCategory = savingsCategory(from);
+        } else if (to == AccountType.LOAN) {
+            // A loan payment is spending even when the loan itself is tracked; the
+            // loan account's side is just its balance going down.
+            outCategory = LOANS;
+            inCategory = ReferenceData.TRANSFER;
         } else if (to == AccountType.CREDIT_CARD) {
             outCategory = ReferenceData.CARD_PAYMENT;
             inCategory = ReferenceData.CARD_PAYMENT;

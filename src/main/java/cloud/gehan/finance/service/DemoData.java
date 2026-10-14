@@ -61,12 +61,13 @@ public class DemoData implements ApplicationRunner {
     private final TransferMatcher matcher;
     private final PortfolioService portfolio;
     private final RecurringBuyRepository recurring;
+    private final Settings settings;
     private final TransactionTemplate tx;
 
     public DemoData(AppProperties props, AccountRepository accounts, TransactionRepository txns,
             CategoryRepository categories, SpendingTargetRepository targets, SavingsGoalRepository goals,
             PaystubRepository paystubs, Balances balances, Categorizer categorizer, TransferMatcher matcher,
-            PortfolioService portfolio, RecurringBuyRepository recurring,
+            PortfolioService portfolio, RecurringBuyRepository recurring, Settings settings,
             TransactionTemplate tx) {
         this.props = props;
         this.accounts = accounts;
@@ -80,6 +81,7 @@ public class DemoData implements ApplicationRunner {
         this.matcher = matcher;
         this.portfolio = portfolio;
         this.recurring = recurring;
+        this.settings = settings;
         this.tx = tx;
     }
 
@@ -115,7 +117,7 @@ public class DemoData implements ApplicationRunner {
             monthly(events, today, checking, m, 1, -1_950_00, "AVALON APARTMENTS RENT");
             monthly(events, today, checking, m, 2, -500_00, "ONLINE TRANSFER TO SAV XXXXXX4321");
             monthly(events, today, savings, m, 3, 500_00, "TRANSFER FROM CHK XXXXXX4410");
-            monthly(events, today, sapphire, m, 5, -142_50, "GEICO *AUTO INSURANCE");
+            monthly(events, today, sapphire, m, 5, -38_00, "LEMONADE INSURANCE RENTERS");
             monthly(events, today, checking, m, 12, -(88_00 + r.nextInt(55_00)), "PSE&G CO PAYMENT");
             monthly(events, today, sapphire, m, 18, -85_00, "VERIZON WIRELESS");
             monthly(events, today, checking, m, 22, -79_99, "COMCAST XFINITY");
@@ -126,7 +128,6 @@ public class DemoData implements ApplicationRunner {
             monthly(events, today, checking, m, 7, -24_99, "PLANET FITNESS CLUB FEES");
             monthly(events, today, checking, m, 16, -300_00, "WEBULL FINANCIAL ACH DEBIT");
             monthly(events, today, webull, m, 17, 300_00, "ACH DEPOSIT FROM BANK");
-            monthly(events, today, sapphire, m, 11, -35_00, "E-ZPASS NJ REPLENISH");
             monthly(events, today, checking, m, len, 38_00 + r.nextInt(8_00), "INTEREST PAID");
             if (r.nextBoolean()) {
                 monthly(events, today, checking, m, 8 + r.nextInt(15), -(20_00 + r.nextInt(60_00)), "VENMO PAYMENT 1023");
@@ -146,9 +147,6 @@ public class DemoData implements ApplicationRunner {
                     String[] places = {"STARBUCKS STORE 22451", "CHIPOTLE 1932", "DOORDASH*THAI BASIL",
                             "TST* LOCAL BISTRO", "SWEETGREEN HOBOKEN", "DUNKIN #348812"};
                     events.add(new Event(sapphire, d, -(6_00 + r.nextInt(58_00)), places[r.nextInt(places.length)]));
-                }
-                if (day % 10 == 4) {
-                    events.add(new Event(sapphire, d, -(38_00 + r.nextInt(24_00)), r.nextBoolean() ? "SHELL OIL 57444" : "WAWA 8123"));
                 }
                 if (r.nextInt(8) == 0) {
                     events.add(new Event(amex, d, -(15_00 + r.nextInt(105_00)), "AMAZON.COM*2K4L1 AMZN.COM/BILL"));
@@ -232,7 +230,6 @@ public class DemoData implements ApplicationRunner {
         target("Groceries", 650_00);
         target("Shopping", 300_00);
         target("Subscriptions", 60_00);
-        target("Gas", 180_00);
         target("Entertainment", 100_00);
 
         SavingsGoal emergency = new SavingsGoal("Emergency fund", GoalType.BALANCE);
@@ -248,6 +245,7 @@ public class DemoData implements ApplicationRunner {
         rate.setTargetPercent(20.0);
         goals.save(rate);
 
+        settings.setSavingsTargetCents(1_000_00L);
         log.info("Seeded demo data: 6 accounts, {} transactions", created.size());
     }
 

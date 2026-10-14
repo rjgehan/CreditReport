@@ -133,7 +133,9 @@ public class ReferenceData implements ApplicationRunner {
             new RuleSeed("Gifts & Donations", AmountSign.OUT, "DONATION", "GOFUNDME", "CHARITY"),
             new RuleSeed("Fees & Interest", AmountSign.OUT, "FEE", "INTEREST CHARGE", "LATE FEE", "OVERDRAFT",
                     "FINANCE CHARGE"),
-            new RuleSeed("Taxes", AmountSign.OUT, "IRS", "TREAS TAX", "STATE TAX", "DMV"));
+            new RuleSeed("Taxes", AmountSign.OUT, "IRS", "TREAS TAX", "STATE TAX", "DMV"),
+            new RuleSeed("Loans", AmountSign.OUT, "NELNET", "NAVIENT", "MOHELA", "AIDVANTAGE", "SALLIE MAE",
+                    "EDFINANCIAL", "LOAN PMT", "LOAN PAYMENT", "AUTO LOAN", "STUDENT LN"));
 
     private final CategoryRepository categories;
     private final CategoryRuleRepository rules;

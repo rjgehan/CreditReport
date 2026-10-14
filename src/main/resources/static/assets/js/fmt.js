@@ -1,15 +1,17 @@
 // Number and date formatting, and the privacy switch that masks every amount.
 
-const KEY = 'finance.private';
-let hidden = false;
-try { hidden = localStorage.getItem(KEY) === '1'; } catch { /* private mode: default to shown */ }
+// Amounts start hidden every time the app opens, and hide again after a few
+// minutes in the background, so handing someone the phone never shows them.
+// Deliberately not remembered: showing is a choice made each visit.
+const REHIDE_AFTER_MS = 2 * 60 * 1000;
+let hidden = true;
+let hiddenAt = null;
 const listeners = new Set();
 
 export const privacy = {
   get on() { return hidden; },
   set(on) {
     hidden = !!on;
-    try { localStorage.setItem(KEY, hidden ? '1' : '0'); } catch { /* ignore */ }
     document.body.classList.toggle('private', hidden);
     listeners.forEach((fn) => fn(hidden));
   },
@@ -17,6 +19,13 @@ export const privacy = {
   onChange(fn) { listeners.add(fn); },
 };
 document.body.classList.toggle('private', hidden);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    hiddenAt = Date.now();
+  } else if (!hidden && hiddenAt && Date.now() - hiddenAt > REHIDE_AFTER_MS) {
+    privacy.set(true);
+  }
+});
 
 const MASK = '$•••••';
 const whole = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });

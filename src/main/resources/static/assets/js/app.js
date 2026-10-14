@@ -1,4 +1,4 @@
-// Shell: tabs, hash routing, the privacy switch and the sync button.
+// Shell: tabs, hash routing and the sync button.
 
 import { get, post } from './api.js';
 import { h, clear, icon, toast, flushMount, discardMount } from './ui.js';
@@ -7,14 +7,20 @@ import * as home from './views/home.js';
 import * as flow from './views/flow.js';
 import * as activity from './views/activity.js';
 import * as accounts from './views/accounts.js';
+import * as history from './views/history.js';
 import * as plan from './views/plan.js';
 
+// Tabs first; the rest are screens reached from a tab, with a back button to it.
 const ROUTES = [
   { path: 'home', title: 'Home', icon: 'home', view: home },
   { path: 'flow', title: 'Cash flow', tab: 'Flow', icon: 'flow', view: flow },
   { path: 'activity', title: 'Activity', icon: 'list', view: activity },
   { path: 'accounts', title: 'Accounts', icon: 'bank', view: accounts },
-  { path: 'plan', title: 'Plan', icon: 'target', view: plan },
+  { path: 'history', title: 'History', icon: 'calendar', view: history },
+  { path: 'targets', title: 'Spending targets', parent: 'home', view: { render: plan.targetsPage } },
+  { path: 'goals', title: 'Goals', parent: 'home', view: { render: plan.goalsPage } },
+  { path: 'paychecks', title: 'Paychecks', parent: 'flow', view: { render: plan.paychecksPage } },
+  { path: 'rules', title: 'Rules', parent: 'activity', view: { render: plan.rulesPage } },
 ];
 
 export const app = { me: null, rerender: () => {} };
@@ -22,12 +28,13 @@ export const app = { me: null, rerender: () => {} };
 const tabbar = document.querySelector('.tabbar');
 const view = document.getElementById('view');
 const title = document.getElementById('title');
-const privacyBtn = document.getElementById('privacy');
+const back = document.getElementById('back');
 const syncBtn = document.getElementById('sync');
 
-for (const r of ROUTES) {
+for (const r of ROUTES.filter((r) => r.icon)) {
   tabbar.append(h('a', { href: '#/' + r.path, dataset: { path: r.path } }, icon(r.icon), r.tab || r.title));
 }
+back.append(icon('back'));
 
 function parseHash() {
   const raw = location.hash.replace(/^#\/?/, '');
@@ -41,7 +48,10 @@ async function render() {
   const route = ROUTES.find((r) => r.path === path) || ROUTES[0];
   title.textContent = route.title;
   document.title = route.title === 'Home' ? 'Finance' : `${route.title} · Finance`;
-  tabbar.querySelectorAll('a').forEach((a) => a.classList.toggle('active', a.dataset.path === route.path));
+  const tab = route.parent || route.path;
+  tabbar.querySelectorAll('a').forEach((a) => a.classList.toggle('active', a.dataset.path === tab));
+  back.hidden = !route.parent;
+  back.setAttribute('href', '#/' + (route.parent || 'home'));
   const token = {};
   current = token;
   view.classList.add('loading');
@@ -55,25 +65,22 @@ async function render() {
     if (current !== token) return;
     clear(view).append(h('div', { class: 'card empty' }, e.message));
   } finally {
-    if (current === token) view.classList.remove('loading');
+    if (current === token) view.classList.remove('loading', 'masking');
   }
 }
 app.rerender = render;
 app.go = (hash) => { if (location.hash === hash) render(); else location.hash = hash; };
 
-function paintPrivacy() {
-  clear(privacyBtn).append(icon(privacy.on ? 'eyeOff' : 'eye'));
-  privacyBtn.classList.toggle('on', privacy.on);
-  const label = privacy.on ? 'Show amounts' : 'Hide amounts';
-  privacyBtn.setAttribute('aria-label', label);
-  privacyBtn.title = label;
-}
-privacyBtn.addEventListener('click', () => {
-  privacy.toggle();
-  toast(privacy.on ? 'Amounts hidden' : 'Amounts shown');
+privacy.onChange((hidden) => {
+  if (hidden) {
+    // Re-hiding (on a timer, or by hand) must not leave amounts showing anywhere:
+    // close sheets and toasts, and blank the view until it re-renders masked.
+    document.querySelectorAll('.sheet-backdrop, .toast').forEach((n) => n.remove());
+    document.body.style.overflow = '';
+    view.classList.add('masking');
+  }
+  render();
 });
-privacy.onChange(() => { paintPrivacy(); render(); });
-paintPrivacy();
 
 syncBtn.append(icon('sync'));
 syncBtn.addEventListener('click', async () => {

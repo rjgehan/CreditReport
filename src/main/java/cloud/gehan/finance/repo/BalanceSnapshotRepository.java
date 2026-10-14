@@ -24,6 +24,8 @@ public interface BalanceSnapshotRepository extends JpaRepository<BalanceSnapshot
 
     Optional<BalanceSnapshot> findTopByAccountOrderByDayAsc(Account account);
 
+    long countByAccountAndDayGreaterThanEqual(Account account, LocalDate day);
+
     @Modifying
     @Query("delete from BalanceSnapshot s where s.account = ?1")
     void deleteByAccount(Account account);

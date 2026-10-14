@@ -12,15 +12,18 @@ const RANGES = [
   ['6', '6M'],
   ['12', '12M'],
 ];
-const RANGE_NAMES = { month: 'This month', 3: '3-month average', 6: '6-month average', 12: '12-month average' };
+const RANGE_NAMES = { month: 'One month', 3: 'Last 3 months', 6: 'Last 6 months', 12: 'Last 12 months' };
+const MODES = [['total', 'Total'], ['avg', 'Avg']];
 
 export async function render(params, app) {
   const range = params.get('range') || 'month';
   const month = params.get('month') || thisMonth();
-  const go = (r, m) => app.go(`#/flow?range=${r}&month=${m}`);
+  const mode = params.get('mode') === 'avg' ? 'avg' : 'total';
+  const go = (r, m, md) => app.go(`#/flow?range=${r}&month=${m}&mode=${md || mode}`);
 
   let url;
   let left;
+  let caption = null;
   if (range === 'month') {
     url = `/api/flow?from=${month}&to=${month}`;
     left = h('div', { class: 'month-nav' },
@@ -28,11 +31,13 @@ export async function render(params, app) {
       h('span', null, monthLabel(month, true)),
       h('button', { 'aria-label': 'Next month', disabled: month >= thisMonth(), onclick: () => go('month', shiftMonth(month, 1)) }, '›'));
   } else {
-    // Averages end at the last complete month, so a half-finished one doesn't drag them down.
+    // Multi-month ranges end at the last complete month, so a half-finished one doesn't skew them.
     const end = shiftMonth(thisMonth(), -1);
     const start = shiftMonth(end, -(Number(range) - 1));
-    url = `/api/flow?from=${start}&to=${end}&average=true`;
-    left = h('span', { class: 'avg-label' }, `${monthLabel(start, true)} – ${monthLabel(end, true)} avg`);
+    url = `/api/flow?from=${start}&to=${end}&average=${mode === 'avg'}`;
+    left = segmented(MODES, mode, (md) => go(range, month, md));
+    left.querySelectorAll('button').forEach((b, i) => b.setAttribute('aria-label', i ? 'Average per month' : 'Total for the period'));
+    caption = `${monthLabel(start, true)} – ${monthLabel(end, true)}${mode === 'avg' ? ', per month' : ', total'}`;
   }
   const switcher = segmented(RANGES, range, (r) => go(r, month));
   switcher.querySelectorAll('button').forEach((b, i) => b.setAttribute('aria-label', RANGE_NAMES[RANGES[i][0]]));
@@ -46,13 +51,13 @@ export async function render(params, app) {
       const suffix = range === 'month' ? `&month=${month}` : '';
       if (n.categoryId) app.go(`#/activity?category=${n.categoryId}${suffix}`);
       else if (n.id === 'exp:other' && range === 'month') app.go(`#/activity?month=${month}`);
-      else if (n.id === 'taxes') app.go('#/plan?tab=pay');
+      else if (n.id === 'in' || n.id === 'taxes') app.go('#/paychecks');
     },
   }));
 
   return h('div', null,
     h('div', { class: 'toolbar period' }, left, switcher),
-    h('section', { class: 'card flow-card' }, chart),
+    h('section', { class: 'card flow-card' }, caption ? h('div', { class: 'flow-caption' }, caption) : null, chart),
     screenReaderList(d, flow.income));
 }
 

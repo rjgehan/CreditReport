@@ -1,9 +1,9 @@
 package cloud.gehan.finance.service;
 
-import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -127,7 +127,13 @@ public class PortfolioService implements ApplicationRunner {
                 return;
             }
             LocalDate firstSnapshot = snapshots.findTopByAccountOrderByDayAsc(account).map(s -> s.getDay()).orElse(null);
-            if (firstSnapshot == null || firstSnapshot.isAfter(first.plusDays(7))) {
+            // Also redo histories that are too sparse, such as ones built weekly before
+            // the calendar needed a value for every day.
+            LocalDate today = LocalDate.now(zone);
+            LocalDate from = first.isBefore(today.minusDays(MAX_BACKFILL_DAYS)) ? today.minusDays(MAX_BACKFILL_DAYS) : first;
+            long expected = ChronoUnit.DAYS.between(from, today);
+            boolean sparse = expected > 7 && snapshots.countByAccountAndDayGreaterThanEqual(account, from) < expected * 0.8;
+            if (firstSnapshot == null || firstSnapshot.isAfter(first.plusDays(7)) || sparse) {
                 backfill(accountId, first);
             }
         });
@@ -222,7 +228,7 @@ public class PortfolioService implements ApplicationRunner {
     /**
      * Rebuilds an account's balance history from {@code from} to yesterday by
      * replaying its trades backwards from today's share counts against
-     * historical closes. One point per trading week plus every trade day.
+     * historical closes. One point per day, which the History calendar needs.
      */
     public void backfill(Long accountId, LocalDate from) {
         LocalDate today = LocalDate.now(zone);
@@ -245,9 +251,7 @@ public class PortfolioService implements ApplicationRunner {
 
         TreeSet<LocalDate> days = new TreeSet<>();
         for (LocalDate d = start; d.isBefore(today); d = d.plusDays(1)) {
-            if (d.getDayOfWeek() == DayOfWeek.FRIDAY) {
-                days.add(d);
-            }
+            days.add(d);
         }
         for (HoldingTrade t : log) {
             if (!t.getDay().isBefore(start) && t.getDay().isBefore(today)) {

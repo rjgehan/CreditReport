@@ -1,6 +1,6 @@
 import { get, post, put, patch, del, upload, loadScript } from '../api.js';
 import { h, clear, sheet, toast, field, busy, confirmSheet, icon, onMount } from '../ui.js';
-import { money, pct, shares, ago, parseMoney, centsToInput, TYPE_LABEL, shortDate } from '../fmt.js';
+import { money, pct, shares, ago, parseMoney, centsToInput, TYPE_LABEL, shortDate, privacy } from '../fmt.js';
 import { lineChart } from '../charts.js';
 
 const GROUP_ORDER = ['Cash', 'Credit', 'Investments', 'Retirement', 'Loans', 'Other'];
@@ -87,6 +87,17 @@ export async function render(params, app) {
     }
     root.append(h('div', { class: 'section-title' }, 'Connections'), h('section', { class: 'card flush' }, ul));
   }
+
+  // Tucked at the bottom on purpose: easy to find when you know, unlikely to be
+  // tapped by someone poking around. Amounts hide again every time the app opens.
+  const showAmounts = h('input', { type: 'checkbox', class: 'switch', checked: !privacy.on, 'aria-label': 'Show amounts' });
+  showAmounts.addEventListener('change', () => privacy.set(!showAmounts.checked));
+  root.append(h('div', { class: 'section-title' }, 'Privacy'),
+    h('section', { class: 'card flush' },
+      h('label', { class: 'row' },
+        h('div', { class: 'main' }, h('div', { class: 'title' }, 'Show amounts'),
+          h('div', { class: 'meta' }, 'Hidden again whenever the app opens or sits in the background')),
+        showAmounts)));
   return root;
 }
 

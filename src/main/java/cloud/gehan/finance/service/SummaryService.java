@@ -4,13 +4,13 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
+import java.util.NavigableMap;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,12 +18,10 @@ import org.springframework.transaction.annotation.Transactional;
 import cloud.gehan.finance.config.AppProperties;
 import cloud.gehan.finance.model.Account;
 import cloud.gehan.finance.model.AccountType;
-import cloud.gehan.finance.model.BalanceSnapshot;
 import cloud.gehan.finance.model.Connection;
 import cloud.gehan.finance.model.ConnectionStatus;
 import cloud.gehan.finance.model.ProviderType;
 import cloud.gehan.finance.repo.AccountRepository;
-import cloud.gehan.finance.repo.BalanceSnapshotRepository;
 import cloud.gehan.finance.repo.ConnectionRepository;
 
 /** Everything the Home screen shows, in one request; Accounts reads the net worth history from it too. */
@@ -32,22 +30,25 @@ import cloud.gehan.finance.repo.ConnectionRepository;
 public class SummaryService {
 
     static final int HISTORY_MONTHS = 6;
+    /** The Home sparkline: long enough to see a trend, short enough to stay "lately". */
+    static final int SPARK_DAYS = 30;
 
     private final AccountRepository accounts;
-    private final BalanceSnapshotRepository snapshots;
     private final ConnectionRepository connections;
     private final FlowService flow;
     private final TargetService targets;
+    private final NetWorthService netWorth;
+    private final Budget budget;
     private final ZoneId zone;
 
-    public SummaryService(AccountRepository accounts, BalanceSnapshotRepository snapshots,
-            ConnectionRepository connections, FlowService flow, TargetService targets,
-            AppProperties props) {
+    public SummaryService(AccountRepository accounts, ConnectionRepository connections, FlowService flow,
+            TargetService targets, NetWorthService netWorth, Budget budget, AppProperties props) {
         this.accounts = accounts;
-        this.snapshots = snapshots;
         this.connections = connections;
         this.flow = flow;
         this.targets = targets;
+        this.netWorth = netWorth;
+        this.budget = budget;
         this.zone = props.zoneId();
     }
 
@@ -57,10 +58,6 @@ public class SummaryService {
     public record Group(String name, long cents, int count) {
     }
 
-    public record MonthTotals(String month, long grossIncomeCents, long incomeCents, long spentCents,
-            long savedCents, long leftoverCents, Double savingsRate) {
-    }
-
     public record Card(Long id, String name, String institution, String mask, long balanceCents, Long limitCents,
             Double utilization, LocalDate dueDate, Long minimumPaymentCents, Long statementBalanceCents) {
     }
@@ -68,9 +65,15 @@ public class SummaryService {
     public record Problem(Long connectionId, String name, String status, String error) {
     }
 
-    public record Home(String month, boolean currentMonth, int dayOfMonth, int daysInMonth,
-            long netWorthCents, long assetsCents, long liabilitiesCents, List<Group> groups,
-            List<Point> netWorthHistory, MonthTotals totals, TargetService.Progress targets, List<Card> cards,
+    /**
+     * @param netWorthChangeCents change over the sparkline's window; null without enough history
+     * @param netWorthChangePercent the same as a percentage of where it started
+     * @param netWorthChangeDays how many days that change covers (30 once there is that much history)
+     */
+    public record Home(String month, long netWorthCents, long assetsCents, long liabilitiesCents, List<Group> groups,
+            List<Point> netWorthHistory, List<Point> netWorthSpark, Long netWorthChangeCents,
+            Double netWorthChangePercent, Integer netWorthChangeDays, Budget.MonthPlan plan,
+            TargetService.Progress targets, List<Card> cards,
             Instant lastSyncedAt, List<Problem> problems, boolean hasAccounts) {
     }
 
@@ -101,8 +104,29 @@ public class SummaryService {
             }
         });
 
-        FlowService.Breakdown b = flow.month(month);
+        NavigableMap<LocalDate, Long> daily = netWorth.daily(today.minusMonths(HISTORY_MONTHS), today);
+        List<Point> history = new ArrayList<>();
+        LocalDate next = null;
+        for (Map.Entry<LocalDate, Long> e : daily.entrySet()) {
+            // Weekly points for the six-month chart on Accounts, plus today.
+            if (next == null || !e.getKey().isBefore(next) || e.getKey().equals(today)) {
+                history.add(new Point(e.getKey(), e.getValue()));
+                next = e.getKey().plusWeeks(1);
+            }
+        }
+        List<Point> spark = daily.tailMap(today.minusDays(SPARK_DAYS), true).entrySet().stream()
+                .map(e -> new Point(e.getKey(), e.getValue())).toList();
+        Long change = null;
+        Double changePct = null;
+        Integer changeDays = null;
+        if (spark.size() >= 2 && spark.get(0).day().isBefore(today.minusDays(SPARK_DAYS / 2))) {
+            long start = spark.get(0).cents();
+            change = spark.get(spark.size() - 1).cents() - start;
+            changePct = start == 0 ? null : 100.0 * change / Math.abs(start);
+            changeDays = (int) ChronoUnit.DAYS.between(spark.get(0).day(), today);
+        }
 
+        FlowService.Breakdown b = flow.month(month);
         List<Card> cards = visible.stream()
                 .filter(a -> a.getType() == AccountType.CREDIT_CARD)
                 .sorted(Comparator.comparingLong(Account::getBalanceCents))
@@ -124,64 +148,8 @@ public class SummaryService {
             }
         }
 
-        boolean current = YearMonth.from(today).equals(month);
-        return new Home(month.toString(), current, current ? today.getDayOfMonth() : month.lengthOfMonth(),
-                month.lengthOfMonth(), assets - liabilities, assets, liabilities, groupList,
-                netWorthHistory(visible, today), totals(month, b), targets.progress(month), cards,
-                lastSynced, problems, !visible.isEmpty());
-    }
-
-    private static MonthTotals totals(YearMonth m, FlowService.Breakdown b) {
-        return new MonthTotals(m.toString(), b.grossIncome(), b.cashIncome(), b.spent(), b.saved(), b.leftover(),
-                b.savingsRate());
-    }
-
-    /**
-     * Net worth each week for the last six months, carrying each account's last
-     * known balance forward over days nobody synced it.
-     */
-    List<Point> netWorthHistory(List<Account> visible, LocalDate today) {
-        LocalDate start = today.minusMonths(HISTORY_MONTHS);
-        Map<Long, TreeMap<LocalDate, Long>> byAccount = new HashMap<>();
-        for (Account a : visible) {
-            TreeMap<LocalDate, Long> series = new TreeMap<>();
-            snapshots.findTopByAccountAndDayLessThanOrderByDayDesc(a, start)
-                    .ifPresent(s -> series.put(s.getDay(), s.getBalanceCents()));
-            byAccount.put(a.getId(), series);
-        }
-        for (BalanceSnapshot s : snapshots.findByDayGreaterThanEqualOrderByDayAsc(start)) {
-            TreeMap<LocalDate, Long> series = byAccount.get(s.getAccount().getId());
-            if (series != null) {
-                series.put(s.getDay(), s.getBalanceCents());
-            }
-        }
-        // Today is always the live balance, even if no snapshot has been written yet.
-        for (Account a : visible) {
-            byAccount.get(a.getId()).put(today, a.getBalanceCents());
-        }
-
-        List<Point> points = new ArrayList<>();
-        LocalDate first = byAccount.values().stream()
-                .filter(s -> !s.isEmpty()).map(TreeMap::firstKey).min(LocalDate::compareTo).orElse(today);
-        LocalDate day = first.isAfter(start) ? first : start;
-        while (!day.isAfter(today)) {
-            points.add(new Point(day, worthOn(byAccount, day)));
-            if (day.equals(today)) {
-                break;
-            }
-            day = day.plusWeeks(1).isAfter(today) ? today : day.plusWeeks(1);
-        }
-        return points;
-    }
-
-    private static long worthOn(Map<Long, TreeMap<LocalDate, Long>> byAccount, LocalDate day) {
-        long total = 0;
-        for (TreeMap<LocalDate, Long> series : byAccount.values()) {
-            Map.Entry<LocalDate, Long> e = series.floorEntry(day);
-            if (e != null) {
-                total += e.getValue();
-            }
-        }
-        return total;
+        return new Home(month.toString(), assets - liabilities, assets, liabilities, groupList, history, spark,
+                change, changePct, changeDays, budget.plan(month, b), targets.progress(month), cards, lastSynced, problems,
+                !visible.isEmpty());
     }
 }

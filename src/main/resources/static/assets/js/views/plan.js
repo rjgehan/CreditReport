@@ -1,22 +1,23 @@
 import { get, post, put, del } from '../api.js';
-import { h, sheet, toast, field, busy, confirmSheet, segmented, icon } from '../ui.js';
-import { money, pct, parseMoney, centsToInput, shortDate, thisMonth } from '../fmt.js';
+import { h, sheet, toast, field, busy, confirmSheet, icon } from '../ui.js';
+import { money, pct, parseMoney, centsToInput, shortDate, thisMonth, privacy } from '../fmt.js';
 import { meter } from '../charts.js';
 import { categories } from './activity.js';
 
-const TABS = [['targets', 'Targets'], ['goals', 'Goals'], ['pay', 'Paychecks'], ['rules', 'Rules']];
+// The screens behind Home's targets and goals cards, Flow's income and Activity's rules.
 
-export async function render(params, app) {
-  const tab = params.get('tab') || 'targets';
-  const root = h('div', { class: 'grid' });
-  root.append(h('div', { class: 'toolbar' }, segmented(TABS, tab, (t) => app.go('#/plan?tab=' + t))));
-  const refresh = () => app.rerender();
-  if (tab === 'targets') await targets(root, refresh);
-  else if (tab === 'goals') await goals(root, refresh);
-  else if (tab === 'pay') await pay(root, refresh);
-  else await rules(root, refresh);
-  return root;
+function page(builder) {
+  return async (params, app) => {
+    const root = h('div', { class: 'grid' });
+    await builder(root, () => app.rerender());
+    return root;
+  };
 }
+
+export const targetsPage = page((root, refresh) => targets(root, refresh));
+export const goalsPage = page((root, refresh) => goals(root, refresh));
+export const paychecksPage = page((root, refresh) => pay(root, refresh));
+export const rulesPage = page((root, refresh) => rules(root, refresh));
 
 // --- Spending targets ---------------------------------------------------------------
 
@@ -44,10 +45,14 @@ function targetSheet(cats, existing, refresh) {
   sheet(existing ? existing.name : 'New spending target', (body, s) => {
     const cat = h('select', { class: 'field', disabled: !!existing },
       cats.filter((c) => c.kind === 'EXPENSE').map((c) => h('option', { value: c.id, selected: existing && c.id === existing.categoryId }, `${c.icon || ''} ${c.name}`)));
-    const limit = h('input', { class: 'field', inputmode: 'decimal', value: existing ? centsToInput(existing.limitCents) : '', placeholder: 'e.g. 400' });
+    // With amounts hidden, the current limit isn't prefilled; a blank field keeps it.
+    const hidden = privacy.on && existing;
+    const limit = h('input', { class: 'field', inputmode: 'decimal', value: existing && !hidden ? centsToInput(existing.limitCents) : '',
+      placeholder: hidden ? 'Hidden. Type a new amount' : 'e.g. 400' });
     const save = h('button', { class: 'btn primary' }, 'Save');
     save.addEventListener('click', busy(save, async () => {
       const cents = parseMoney(limit.value);
+      if ((!cents || cents <= 0) && hidden) { s.close(); return; }
       if (!cents || cents <= 0) throw new Error('Enter a monthly amount');
       await put('/api/targets/' + cat.value, { monthlyLimitCents: cents });
       s.close(); refresh();
@@ -55,7 +60,8 @@ function targetSheet(cats, existing, refresh) {
     const remove = existing ? h('button', { class: 'btn danger', onclick: async () => {
       await put('/api/targets/' + existing.categoryId, { monthlyLimitCents: 0 }); s.close(); refresh();
     } }, 'Remove') : null;
-    body.append(h('div', { class: 'form' }, field('Category', cat), field('Monthly limit', limit), h('div', { class: 'btn-row' }, save, remove)));
+    const txns = existing ? h('a', { class: 'btn', href: `#/activity?category=${existing.categoryId}&month=${thisMonth()}` }, 'Transactions') : null;
+    body.append(h('div', { class: 'form' }, field('Category', cat), field('Monthly limit', limit), h('div', { class: 'btn-row' }, save, txns, remove)));
   });
 }
 

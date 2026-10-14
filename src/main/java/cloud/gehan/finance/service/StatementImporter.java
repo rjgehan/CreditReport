@@ -29,7 +29,7 @@ import cloud.gehan.finance.repo.TransactionRepository;
 
 /**
  * Imports a downloaded statement into one account: the free way in for anything
- * Teller doesn't reach, and for history from before a connection existed.
+ * SimpleFIN doesn't reach, and for history from before a connection existed.
  *
  * <p>OFX/QFX/QBO (the "Quicken" or "Money" download nearly every bank offers) is
  * preferred: it carries the bank's own transaction ids and the closing balance.

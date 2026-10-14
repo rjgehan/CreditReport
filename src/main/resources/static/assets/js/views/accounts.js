@@ -1,4 +1,4 @@
-import { get, post, put, patch, del, upload, loadScript } from '../api.js';
+import { get, post, put, patch, del, upload } from '../api.js';
 import { h, clear, sheet, toast, field, busy, confirmSheet, icon, onMount, logoAvatar } from '../ui.js';
 import { money, pct, shares, ago, parseMoney, centsToInput, TYPE_LABEL, shortDate, privacy } from '../fmt.js';
 import { lineChart } from '../charts.js';
@@ -16,7 +16,7 @@ export async function render(params, app) {
     root.append(h('div', { class: 'banner' }, h('div', { style: { flex: 1 } },
       h('strong', null, c.displayName), ' ', c.status === 'NEEDS_REAUTH' ? 'needs you to sign in again.' : 'failed to sync.',
       c.lastError ? h('div', { class: 'hint' }, c.lastError) : null),
-    c.provider === 'TELLER' ? h('button', { class: 'btn small', onclick: () => connectBank(app, c, refresh) }, 'Fix') : null));
+    c.provider === 'SIMPLEFIN' ? h('button', { class: 'btn small', onclick: () => connectBank(app, c, refresh) }, 'Fix') : null));
   }
 
   if (accounts.length) {
@@ -28,7 +28,7 @@ export async function render(params, app) {
     onMount(() => lineChart(chart, summary.netWorthHistory, { height: 120 }));
   } else {
     root.append(h('div', { class: 'card empty' },
-      h('p', null, 'Connect SoFi and Chase, add Webull and PCS by hand, or import a statement. The buttons are at the bottom.')));
+      h('p', null, 'Connect SoFi and Chase through SimpleFIN, add Webull and PCS by hand, or import a statement. The buttons are at the bottom.')));
   }
 
   const groups = new Map(GROUP_ORDER.map((g) => [g, []]));
@@ -110,63 +110,51 @@ function avatarFor(a) {
 
 // --- Connecting ---------------------------------------------------------------------
 
-async function connectBank(app, repair, done) {
-  const me = app.me;
-  if (!me.tellerApplicationId) {
-    sheet('Connect a bank', (body) => {
+/**
+ * Banks and cards come in through SimpleFIN Bridge: you connect them on the
+ * bridge, then hand this app one setup token. A broken login is fixed on the
+ * bridge too, after which Sync pulls again.
+ */
+function connectBank(app, repair, done) {
+  sheet(repair ? `Fix ${repair.displayName}` : 'Connect a bank', (body, s) => {
+    if (repair) {
       body.append(
-        h('p', null, 'Bank connections go through Teller, which is free for personal use. Set it up on the server first:'),
-        h('ol', { style: { paddingLeft: '20px', lineHeight: 1.6 } },
-          h('li', null, 'Sign up at teller.io and create an application.'),
-          h('li', null, 'Download certificate.pem and private_key.pem from the dashboard.'),
-          h('li', null, 'Set TELLER_APPLICATION_ID, TELLER_CERTIFICATE and TELLER_PRIVATE_KEY, then restart.')),
-        h('p', { class: 'hint' }, 'Or, for about $15 a year, SimpleFIN Bridge works without any server setup:'),
-        simpleFinForm(done));
-    });
-    return;
-  }
-  if (!me.tellerReady) {
-    toast('Teller needs its certificate: set TELLER_CERTIFICATE and TELLER_PRIVATE_KEY.');
-    return;
-  }
-  try {
-    await loadScript('https://cdn.teller.io/connect/connect.js');
-  } catch {
-    toast('Could not load Teller Connect. Check your connection.');
-    return;
-  }
-  const connect = window.TellerConnect.setup({
-    applicationId: me.tellerApplicationId,
-    environment: me.tellerEnvironment,
-    products: ['transactions', 'balance'],
-    enrollmentId: repair?.externalId || undefined,
-    selectAccount: 'multiple',
-    onSuccess: async (enrollment) => {
-      toast('Connected. Pulling transactions…');
-      try {
-        const r = await post('/api/connections/teller', {
-          accessToken: enrollment.accessToken,
-          enrollmentId: enrollment.enrollment?.id,
-          institutionName: enrollment.enrollment?.institution?.name,
-        });
-        toast(r.syncError ? 'Connected, but the first sync failed: ' + r.syncError : 'All set');
-      } catch (e) {
-        toast(e.message);
-      }
-      done();
-    },
+        h('p', { style: { marginTop: 0 } }, 'Sign in to the bank again on the SimpleFIN bridge, then sync here.'),
+        h('div', { class: 'btn-row' },
+          h('a', { class: 'btn primary', href: 'https://bridge.simplefin.org', target: '_blank', rel: 'noopener' }, 'Open SimpleFIN'),
+          h('button', { class: 'btn', onclick: async () => {
+            const r = await post(`/api/connections/${repair.id}/sync`);
+            toast(r.ok ? 'Synced' : r.error); s.close(); done();
+          } }, 'Sync now')),
+        h('p', { class: 'hint' }, 'Still failing? Make a new setup token on the bridge and paste it below to replace this connection.'),
+        simpleFinForm(s, done));
+      return;
+    }
+    body.append(
+      h('ol', { class: 'steps' },
+        step(1, 'Sign up at SimpleFIN Bridge', 'About $15 a year. It connects to your banks and hands this app read-only access.'),
+        step(2, 'Connect SoFi and Chase there', 'Add any other banks or cards too. Leave Webull and PCS out; they are tracked here by hand.'),
+        step(3, 'Create a setup token', 'On the bridge: Apps, New app connection. Copy the token it shows.'),
+        step(4, 'Paste it here', 'Accounts appear right away; transactions follow over the next few minutes.')),
+      h('a', { class: 'btn', href: 'https://bridge.simplefin.org', target: '_blank', rel: 'noopener', style: { margin: '14px 0' } }, 'Open SimpleFIN Bridge'),
+      simpleFinForm(s, done));
   });
-  connect.open();
 }
 
-function simpleFinForm(done) {
-  const token = h('textarea', { class: 'field', rows: 3, placeholder: 'Paste the Setup Token from beta-bridge.simplefin.org' });
-  const go = h('button', { class: 'btn' }, 'Connect SimpleFIN');
+function step(n, title, text) {
+  return h('li', { class: 'step' }, h('div', { class: 'step-n' }, String(n)),
+    h('div', { class: 'step-body' }, h('div', { class: 'title' }, title), h('div', { class: 'hint' }, text)));
+}
+
+function simpleFinForm(s, done) {
+  const token = h('textarea', { class: 'field', rows: 3, placeholder: 'Paste the setup token', autocapitalize: 'off', autocomplete: 'off', spellcheck: 'false' });
+  const go = h('button', { class: 'btn primary' }, 'Connect');
   go.addEventListener('click', busy(go, async () => {
+    if (!token.value.trim()) throw new Error('Paste the setup token first');
+    toast('Connecting…');
     const r = await post('/api/connections/simplefin', { setupToken: token.value.trim() });
-    toast(r.syncError ? 'Connected; first sync failed: ' + r.syncError : 'Connected');
-    document.querySelector('.sheet-backdrop')?.remove();
-    document.body.style.overflow = '';
+    toast(r.syncError ? 'Connected, but the first sync failed: ' + r.syncError : 'Connected');
+    s.close();
     done();
   }));
   return h('div', { class: 'form' }, token, go);

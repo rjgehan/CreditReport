@@ -22,8 +22,8 @@ import cloud.gehan.finance.config.AppProperties;
 
 /**
  * AES-256-GCM for the provider credentials: a SimpleFIN access URL has your
- * bridge username and password in it, and a Teller access token reads every
- * account on the login. Neither should sit in the database as plain text.
+ * bridge username and password in it, and reads every account on the bridge.
+ * It should not sit in the database as plain text.
  *
  * <p>The key comes from APP_ENCRYPTION_KEY. Without it, one is generated into the
  * data directory on first start, which still keeps tokens out of a copied or

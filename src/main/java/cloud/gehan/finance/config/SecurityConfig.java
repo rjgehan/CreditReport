@@ -131,10 +131,9 @@ public class SecurityConfig {
                 .headers(headers -> headers
                         .contentSecurityPolicy(csp -> csp.policyDirectives(String.join("; ",
                                 "default-src 'self'",
-                                // Teller Connect is the one third-party script, loaded only when linking a bank.
-                                "script-src 'self' https://cdn.teller.io",
-                                "frame-src https://teller.io https://*.teller.io",
-                                "connect-src 'self' https://*.teller.io",
+                                "script-src 'self'",
+                                "frame-src 'none'",
+                                "connect-src 'self'",
                                 "style-src 'self' 'unsafe-inline'",
                                 "img-src 'self' data:",
                                 "font-src 'self'",

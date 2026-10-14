@@ -8,9 +8,8 @@
 #
 # Full walkthrough: DEPLOY.md in the repository. In short, before importing:
 #
-#   sudo mkdir -p /DATA/AppData/finance/teller
+#   sudo mkdir -p /DATA/AppData/finance
 #   sudo chown -R 10001:10001 /DATA/AppData/finance
-#   (copy certificate.pem and private_key.pem from Teller into .../teller/)
 #
 # Then: CasaOS -> + -> Custom Install -> Import -> paste -> fill in CHANGE ME,
 # and on the server:
@@ -44,11 +43,6 @@ services:
       # Keep a copy in your password manager; without it the stored bank
       # connections can't be read and you'd have to reconnect them.
       - APP_ENCRYPTION_KEY=CHANGE_ME
-      # CHANGE ME. From the Teller dashboard (starts with app_).
-      - TELLER_APPLICATION_ID=CHANGE_ME
-      - TELLER_ENVIRONMENT=development
-      - TELLER_CERTIFICATE=/data/teller/certificate.pem
-      - TELLER_PRIVATE_KEY=/data/teller/private_key.pem
       # Tailscale serve terminates HTTPS, so cookies can be HTTPS-only.
       - SESSION_COOKIE_SECURE=true
       - APP_DEMO_DATA=false
@@ -81,9 +75,6 @@ services:
         - container: APP_ENCRYPTION_KEY
           description:
             en_us: "openssl rand -base64 32. Encrypts bank tokens. Back it up."
-        - container: TELLER_APPLICATION_ID
-          description:
-            en_us: From the Teller dashboard (starts with app_).
       ports:
         - container: "8080"
           description:
@@ -91,7 +82,7 @@ services:
       volumes:
         - container: /data
           description:
-            en_us: finance.db, the Teller certificate and logo cache. Must be owned by UID 10001. Back it up.
+            en_us: finance.db and the logo cache. Must be owned by UID 10001. Back it up.
 
 x-casaos:
   architectures:
@@ -107,7 +98,7 @@ x-casaos:
     en_us: Where the money goes, every month.
   description:
     en_us: >-
-      Self-hosted personal finance: bank and card syncing through Teller,
+      Self-hosted personal finance: bank and card syncing through SimpleFIN,
       investments priced from holdings, a cash-flow Sankey, spending targets,
       savings goals and a monthly score. Reachable only over Tailscale.
   icon: https://raw.githubusercontent.com/rjgehan/CreditReport/main/src/main/resources/static/icons/apple-touch-icon.png

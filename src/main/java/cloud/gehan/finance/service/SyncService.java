@@ -28,7 +28,6 @@ import cloud.gehan.finance.provider.FetchResult;
 import cloud.gehan.finance.provider.FetchResult.AccountData;
 import cloud.gehan.finance.provider.FetchResult.LiabilityData;
 import cloud.gehan.finance.provider.FetchResult.TxnData;
-import cloud.gehan.finance.provider.TellerClient;
 import cloud.gehan.finance.provider.ProviderException;
 import cloud.gehan.finance.provider.SimpleFinClient;
 import cloud.gehan.finance.repo.AccountRepository;
@@ -57,7 +56,6 @@ public class SyncService {
     private final AccountRepository accounts;
     private final TransactionRepository txns;
     private final SimpleFinClient simplefin;
-    private final TellerClient teller;
     private final SecretCipher cipher;
     private final Categorizer categorizer;
     private final TransferMatcher matcher;
@@ -66,13 +64,12 @@ public class SyncService {
     private final ZoneId zone;
 
     public SyncService(ConnectionRepository connections, AccountRepository accounts, TransactionRepository txns,
-            SimpleFinClient simplefin, TellerClient teller, SecretCipher cipher, Categorizer categorizer,
+            SimpleFinClient simplefin, SecretCipher cipher, Categorizer categorizer,
             TransferMatcher matcher, Balances balances, TransactionTemplate tx, AppProperties props) {
         this.connections = connections;
         this.accounts = accounts;
         this.txns = txns;
         this.simplefin = simplefin;
-        this.teller = teller;
         this.cipher = cipher;
         this.categorizer = categorizer;
         this.matcher = matcher;
@@ -107,7 +104,6 @@ public class SyncService {
         try {
             FetchResult result = switch (c.getProvider()) {
                 case SIMPLEFIN -> simplefin.fetch(cipher.decrypt(c.getSecretEncrypted()), simpleFinSince(c));
-                case TELLER -> teller.fetch(cipher.decrypt(c.getSecretEncrypted()), c.getDisplayName());
                 case MANUAL -> null;
             };
             if (result == null) {

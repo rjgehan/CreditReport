@@ -176,16 +176,7 @@ public class AccountController {
         return connectionService.addSimpleFin(body.setupToken());
     }
 
-    /** What Teller Connect's onSuccess hands the browser. */
-    public record TellerEnrollment(@NotBlank String accessToken, String enrollmentId, String institutionName) {
-    }
-
-    @PostMapping("/connections/teller")
-    public ConnectionService.Added addTeller(@RequestBody @Valid TellerEnrollment body) {
-        return connectionService.addTeller(body.accessToken(), body.enrollmentId(), body.institutionName());
-    }
-
-    /** After Teller Connect repaired a login: clear the error and pull straight away. */
+    /** Pull one connection now, e.g. after fixing its login on the SimpleFIN bridge. */
     @PostMapping("/connections/{id}/sync")
     public Map<String, Object> syncOne(@PathVariable Long id) {
         String error = sync.syncOne(id);

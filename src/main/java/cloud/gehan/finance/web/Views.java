@@ -55,7 +55,7 @@ public final class Views {
     public record ConnectionView(Long id, String provider, String displayName, String status, String lastError,
             Instant lastSyncedAt, int accountCount, String externalId) {
 
-        // externalId is the Teller enrollment id, which Teller Connect needs to repair a login; it is not a credential.
+        // externalId is the provider's id for the login; it is not a credential.
         public static ConnectionView of(Connection c, int accountCount) {
             return new ConnectionView(c.getId(), c.getProvider().name(), c.getDisplayName(), c.getStatus().name(),
                     c.getLastError(), c.getLastSyncedAt(), accountCount, c.getExternalId());

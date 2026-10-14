@@ -6,7 +6,7 @@ public enum CategorySource {
     MANUAL,
     /** One of your rules matched (Activity, Rules). */
     RULE,
-    /** The provider said so (Teller's transaction category). */
+    /** The provider said so (none of the current providers send categories). */
     PROVIDER,
     /** Filed by Apple Intelligence through the iPhone shortcut, for something no rule or provider covered. */
     AI,

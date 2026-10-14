@@ -10,7 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 /**
- * One login at one provider: a Teller enrollment or a SimpleFIN access URL. A single
+ * One login at one provider: a SimpleFIN access URL. A single
  * connection usually brings several accounts with it.
  */
 @Entity
@@ -31,7 +31,7 @@ public class Connection {
     @Column(length = 4000)
     private String secretEncrypted;
 
-    /** Teller enrollment id, which Teller Connect needs to repair a broken login. */
+    /** The provider's own id for this login, where it has one. */
     private String externalId;
 
     /** Incremental sync cursor, for providers that have one. */

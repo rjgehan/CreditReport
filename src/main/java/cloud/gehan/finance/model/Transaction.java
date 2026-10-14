@@ -47,7 +47,7 @@ public class Transaction {
 
     private String merchant;
 
-    /** What the provider called it, e.g. teller:groceries. Input to the categorizer. */
+    /** What the provider called it, if it said. Kept for reference. */
     private String providerCategory;
 
     @ManyToOne(fetch = FetchType.EAGER)

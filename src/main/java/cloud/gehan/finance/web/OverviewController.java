@@ -11,7 +11,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import cloud.gehan.finance.config.AppProperties;
-import cloud.gehan.finance.config.TellerProperties;
 import cloud.gehan.finance.service.FlowService;
 import cloud.gehan.finance.service.SummaryService;
 
@@ -21,13 +20,11 @@ public class OverviewController {
     private final SummaryService summary;
     private final FlowService flow;
     private final AppProperties props;
-    private final TellerProperties teller;
 
-    public OverviewController(SummaryService summary, FlowService flow, AppProperties props, TellerProperties teller) {
+    public OverviewController(SummaryService summary, FlowService flow, AppProperties props) {
         this.summary = summary;
         this.flow = flow;
         this.props = props;
-        this.teller = teller;
     }
 
     @GetMapping("/api/me")
@@ -36,11 +33,6 @@ public class OverviewController {
         me.put("username", principal.getName());
         me.put("demo", props.demoData());
         me.put("today", LocalDate.now(props.zoneId()).toString());
-        // The application id is public (Teller Connect runs in the browser with it);
-        // the certificate and every access token stay on the server.
-        me.put("tellerApplicationId", teller.configured() ? teller.applicationId() : null);
-        me.put("tellerEnvironment", teller.env());
-        me.put("tellerReady", teller.configured() && (teller.sandbox() || teller.hasCertificate()));
         return me;
     }
 

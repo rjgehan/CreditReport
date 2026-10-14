@@ -76,11 +76,6 @@ public class Categorizer {
                 return;
             }
         }
-        Category provider = ctx.named(ProviderCategories.map(t.getProviderCategory()));
-        if (provider != null) {
-            set(t, guardSavings(t, provider, ctx), CategorySource.PROVIDER);
-            return;
-        }
         // The shortcut only files what nothing else could, so its choice stands until a rule or you say otherwise.
         if (t.getCategorySource() == CategorySource.AI && t.getCategory() != null) {
             return;

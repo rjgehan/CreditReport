@@ -2,8 +2,8 @@
 // Net worth and its direction, what's left to spend this month, which targets
 // are tight, then goals. Tapping a card opens what manages it.
 
-import { get } from '../api.js';
-import { h } from '../ui.js';
+import { get, post } from '../api.js';
+import { h, toast, busy, icon } from '../ui.js';
 import { money, pct, monthLabel, ago, shortDate, privacy, parseDay } from '../fmt.js';
 import { meter } from '../charts.js';
 
@@ -18,7 +18,9 @@ export async function render(params, app) {
       h('a', { class: 'btn primary', href: '#/accounts' }, 'Add accounts'));
   }
 
-  const left = h('div', { class: 'home-col' }, netWorth(d), thisMonth(d), dueCards(d));
+  // With no income on record the month card can't say much, so help find the paycheck first.
+  const setup = d.plan.incomeCents === 0 ? await incomeSetup(app) : null;
+  const left = h('div', { class: 'home-col' }, netWorth(d), setup, thisMonth(d), dueCards(d));
   const right = h('div', { class: 'home-col' }, targets(d), goals(d));
   return h('div', { class: 'grid two' }, left, right);
 }
@@ -181,4 +183,50 @@ function goals(d) {
       meter(g.fraction, g.status === 'behind' ? 'behind' : 'savings', null, 'xs')));
   }
   return card;
+}
+
+// --- Income setup (only while income is $0) ---------------------------------------
+
+/**
+ * Income counts deposits filed as Paycheck or Side Income. A paycheck whose
+ * description no built-in rule recognises lands in Other Income and doesn't
+ * count, so offer the regular deposits the app has spotted, one tap each.
+ */
+async function incomeSetup(app) {
+  const { overview } = await get('/api/paychecks');
+  // Pay already recognised: income is just waiting for this month's payday.
+  if (overview.detected.some((p) => p.tracked)) return null;
+  const candidates = overview.detected.filter((p) => !p.tracked).slice(0, 3);
+  const card = h('section', { class: 'card flush setup' },
+    h('div', { class: 'tcard-head' }, h('h2', null, 'Set up your income')));
+  if (!candidates.length) {
+    card.append(h('div', { class: 'row' }, h('div', { class: 'main' },
+      h('div', { class: 'meta wrap' }, 'No regular deposits spotted yet. Open a paycheck in Activity, file it as Paycheck and tick "always file like this".')),
+    h('a', { class: 'btn small', href: '#/activity' }, 'Activity')));
+    card.append(paystubLink());
+    return card;
+  }
+  for (const p of candidates) {
+    const yes = h('button', { class: 'btn small primary' }, 'This is my pay');
+    yes.addEventListener('click', busy(yes, async () => {
+      const r = await post('/api/paychecks/track', { pattern: p.pattern });
+      toast(`${r.refiled} deposits filed as Paycheck`);
+      app.rerender();
+    }));
+    card.append(h('div', { class: 'row' },
+      h('div', { class: 'main' },
+        h('div', { class: 'title' }, p.pattern),
+        h('div', { class: 'meta' }, `${money(p.averageCents)} ${p.frequency.toLowerCase().replace('_', ' ')}, ${p.count} times`)),
+      yes));
+  }
+  card.append(paystubLink());
+  return card;
+}
+
+// Taxes and 401(k) come out before pay lands; a paystub puts them in the cash flow.
+function paystubLink() {
+  return h('a', { class: 'row tap', href: '#/paychecks' },
+    h('div', { class: 'main' }, h('div', { class: 'title' }, 'Paystub'),
+      h('div', { class: 'meta' }, 'Taxes and 401(k) taken out before payday')),
+    icon('chevron', 18));
 }

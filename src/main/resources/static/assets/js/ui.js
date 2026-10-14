@@ -167,6 +167,75 @@ export function logoAvatar(domain, fallback) {
 }
 
 /**
+ * Swipe a row left to reveal one action behind it, like Mail. Taps still go to the
+ * row; a drag never counts as a tap, and tapping an open row just closes it.
+ * One row is open at a time.
+ */
+let closeOpenSwipe = null;
+export function swipeable(row, label, onAction, kind = '') {
+  const WIDTH = 88;
+  const action = h('button', { class: 'swipe-action ' + kind, type: 'button', tabindex: '-1' }, label);
+  const wrap = h('div', { class: 'swipe' }, action, row);
+  let x = 0, base = 0, startX = 0, startY = 0, pointer = null, dragging = false, dragged = false;
+
+  const outside = (e) => { if (!wrap.contains(e.target)) close(); };
+  function move(to, animate) {
+    x = to;
+    row.style.transition = animate ? 'transform .22s ease' : 'none';
+    row.style.transform = to ? `translateX(${to}px)` : '';
+    wrap.classList.toggle('open', to < 0);
+  }
+  function open() {
+    move(-WIDTH, true);
+    closeOpenSwipe = close;
+    document.addEventListener('pointerdown', outside, true);
+  }
+  function close() {
+    move(0, true);
+    if (closeOpenSwipe === close) closeOpenSwipe = null;
+    document.removeEventListener('pointerdown', outside, true);
+  }
+
+  row.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (closeOpenSwipe && closeOpenSwipe !== close) closeOpenSwipe();
+    pointer = e.pointerId; startX = e.clientX; startY = e.clientY; base = x;
+    dragging = false; dragged = false;
+  });
+  row.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== pointer) return;
+    const dx = e.clientX - startX;
+    if (!dragging) {
+      // Mostly sideways and past a small slop, or it's a scroll or a tap.
+      if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(e.clientY - startY)) return;
+      dragging = dragged = true;
+      try { row.setPointerCapture(pointer); } catch { /* pointer already gone */ }
+    }
+    move(Math.max(-WIDTH * 1.4, Math.min(0, base + dx)), false);
+  });
+  const end = (e) => {
+    if (e.pointerId !== pointer) return;
+    pointer = null;
+    if (!dragging) return;
+    dragging = false;
+    if (x < -WIDTH / 2) open(); else close();
+  };
+  row.addEventListener('pointerup', end);
+  row.addEventListener('pointercancel', end);
+  // Captured on the wrapper so it runs before the row's own click handler.
+  wrap.addEventListener('click', (e) => {
+    if (action.contains(e.target)) return;
+    if (!dragged && x === 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    // The click that ends a drag is swallowed; a later tap on an open row closes it.
+    if (dragged) dragged = false; else close();
+  }, true);
+  action.addEventListener('click', () => { close(); onAction(); });
+  return wrap;
+}
+
+/**
  * Copies text from a tap. The Clipboard API only exists on HTTPS; on plain http
  * (a LAN address) this falls back to selecting a hidden field and copying that.
  */

@@ -1,9 +1,10 @@
 import { get, post, put, patch, del, upload } from '../api.js';
-import { h, clear, sheet, toast, field, busy, confirmSheet, icon, onMount, logoAvatar } from '../ui.js';
+import { h, clear, sheet, toast, field, busy, confirmSheet, icon, onMount, logoAvatar, swipeable } from '../ui.js';
 import { money, pct, shares, ago, parseMoney, centsToInput, TYPE_LABEL, shortDate, privacy } from '../fmt.js';
 import { lineChart } from '../charts.js';
 
 const GROUP_ORDER = ['Cash', 'Credit', 'Investments', 'Retirement', 'Loans', 'Other'];
+let hiddenOpen = false;
 
 export async function render(params, app) {
   const [accounts, connections, summary] = await Promise.all([
@@ -31,31 +32,57 @@ export async function render(params, app) {
       h('p', null, 'Connect SoFi and Chase through SimpleFIN, add Webull and PCS by hand, or import a statement. The buttons are at the bottom.')));
   }
 
+  // Swipe left on an account to hide it (or, in the Hidden list, to bring it back).
+  const setHidden = async (a, hidden) => {
+    await patch('/api/accounts/' + a.id, { hidden });
+    const name = `${a.institution ? a.institution + ' ' : ''}${a.name}`;
+    toast(hidden ? `${name} hidden` : `${name} is back`);
+    refresh();
+  };
+  const accountRow = (a) => {
+    const investment = a.type === 'BROKERAGE' || a.type === 'RETIREMENT';
+    const sub = [];
+    if (a.mask) sub.push('••' + a.mask);
+    if (a.type === 'CREDIT_CARD' && a.creditLimitCents) sub.push(`${pct(-a.balanceCents / a.creditLimitCents)} of limit`);
+    if (a.type === 'CREDIT_CARD' && a.paymentDueDate) sub.push('due ' + shortDate(a.paymentDueDate));
+    const row = h('button', { class: 'row',
+      onclick: () => (investment ? app.go('#/investment?id=' + a.id) : editAccount(a, refresh)) },
+    logoAvatar(a.logo, avatarFor(a)),
+    h('div', { class: 'main' },
+      h('div', { class: 'title' }, `${a.institution ? a.institution + ' ' : ''}${a.name}`),
+      sub.length ? h('div', { class: 'meta' }, sub.join(' · ')) : null),
+    h('div', { class: 'amount' }, money(a.balanceCents, { cents: true })));
+    return a.hidden
+      ? swipeable(row, 'Show', () => setHidden(a, false), 'show')
+      : swipeable(row, 'Hide', () => setHidden(a, true));
+  };
+
   const groups = new Map(GROUP_ORDER.map((g) => [g, []]));
-  for (const a of accounts) groups.get(a.group)?.push(a);
+  for (const a of accounts) if (!a.hidden) groups.get(a.group)?.push(a);
   for (const [name, list] of groups) {
     if (!list.length) continue;
-    const total = list.filter((a) => !a.hidden).reduce((s, a) => s + a.balanceCents, 0);
-    const section = h('section', { class: 'card flush' },
-      h('div', { class: 'card-head', style: { padding: '14px 16px 4px' } }, h('h2', null, name), h('strong', null, money(total))));
-    const ul = h('div', { class: 'list' });
-    for (const a of list) {
-      const investment = a.type === 'BROKERAGE' || a.type === 'RETIREMENT';
-      const sub = [];
-      if (a.mask) sub.push('••' + a.mask);
-      if (a.type === 'CREDIT_CARD' && a.creditLimitCents) sub.push(`${pct(-a.balanceCents / a.creditLimitCents)} of limit`);
-      if (a.type === 'CREDIT_CARD' && a.paymentDueDate) sub.push('due ' + shortDate(a.paymentDueDate));
-      if (a.hidden) sub.push('hidden');
-      ul.append(h('button', { class: 'row', style: a.hidden ? { opacity: 0.55 } : null,
-        onclick: () => (investment ? app.go('#/investment?id=' + a.id) : editAccount(a, refresh)) },
-      logoAvatar(a.logo, avatarFor(a)),
-      h('div', { class: 'main' },
-        h('div', { class: 'title' }, `${a.institution ? a.institution + ' ' : ''}${a.name}`),
-        sub.length ? h('div', { class: 'meta' }, sub.join(' · ')) : null),
-      h('div', { class: 'amount' }, money(a.balanceCents, { cents: true }))));
-    }
-    section.append(ul);
-    root.append(section);
+    const total = list.reduce((s, a) => s + a.balanceCents, 0);
+    root.append(h('section', { class: 'card flush' },
+      h('div', { class: 'card-head', style: { padding: '14px 16px 4px' } }, h('h2', null, name), h('strong', null, money(total))),
+      h('div', { class: 'list' }, list.map(accountRow))));
+  }
+
+  // Hidden accounts keep syncing but count nowhere. Folded away at the bottom.
+  const hiddenAccounts = accounts.filter((a) => a.hidden);
+  if (hiddenAccounts.length) {
+    const list = h('div', { class: 'list', hidden: !hiddenOpen }, hiddenAccounts.map(accountRow));
+    const chevron = icon('chevron', 18);
+    const head = h('button', { class: 'row fold' + (hiddenOpen ? ' open' : ''), 'aria-expanded': String(hiddenOpen) },
+      h('div', { class: 'main' }, h('div', { class: 'title' }, `Hidden (${hiddenAccounts.length})`),
+        h('div', { class: 'meta' }, 'Not in net worth or any total. Swipe left to show one again.')),
+      chevron);
+    head.addEventListener('click', () => {
+      hiddenOpen = list.hidden;
+      list.hidden = !hiddenOpen;
+      head.classList.toggle('open', hiddenOpen);
+      head.setAttribute('aria-expanded', String(hiddenOpen));
+    });
+    root.append(h('section', { class: 'card flush' }, head, list));
   }
 
   // Everything for setting things up lives below the numbers.
@@ -67,6 +94,10 @@ export async function render(params, app) {
 
   root.append(h('div', { class: 'section-title' }, 'More'),
     h('section', { class: 'card flush' },
+      h('a', { class: 'row tap', href: '#/paychecks' },
+        h('div', { class: 'main' }, h('div', { class: 'title' }, 'Paychecks'),
+          h('div', { class: 'meta' }, 'Which deposits are pay, and a paystub for taxes and 401(k)')),
+        icon('chevron', 18)),
       h('a', { class: 'row tap', href: '#/shortcut' },
         h('div', { class: 'main' }, h('div', { class: 'title' }, 'iPhone shortcut'),
           h('div', { class: 'meta' }, 'Files leftover transactions with Apple Intelligence')),

@@ -188,6 +188,7 @@ main {
   min-width: 0;
 }
 .card.flush { padding: 0; overflow: hidden; }
+.card.flush > .row:first-child { border-top: 0; }
 .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .card-head h2, .section-title { font-size: 13px; font-weight: 600; color: var(--ink-2); margin: 0; text-transform: uppercase; letter-spacing: 0.04em; }
 .card-head a, .card-head button.link { font-size: 14px; }
@@ -215,6 +216,19 @@ main {
   cursor: default;
 }
 .list > .row:first-child { border-top: 0; }
+
+/* Swipe-left rows: the action sits under the row and shows as the row slides. */
+.swipe { position: relative; overflow: hidden; }
+.swipe > .row { position: relative; z-index: 1; background: var(--surface); touch-action: pan-y; -webkit-user-select: none; user-select: none; }
+.list > .swipe:first-child > .row { border-top: 0; }
+.swipe-action {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 88px;
+  border: 0; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+  background: var(--ink-2); color: var(--surface);
+}
+.swipe-action.show { background: var(--accent); color: var(--accent-ink); }
+.row.fold svg { color: var(--ink-3); transition: transform .2s ease; }
+.row.fold.open svg { transform: rotate(90deg); }
 button.row, a.row, .row.tap { cursor: pointer; width: 100%; text-align: left; background: none; border-left: 0; border-right: 0; border-bottom: 0; color: inherit; }
 .row.tap:hover, button.row:hover, a.row:hover { background: var(--surface-2); }
 .row .avatar {

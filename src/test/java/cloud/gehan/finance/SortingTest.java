@@ -164,6 +164,22 @@ class SortingTest {
         assertThat(find(checking, old.get("id").asLong()).get("amountCents").asLong()).isEqualTo(-30000);
     }
 
+    @Test
+    void aOneOffStaysOutOfTheBudget() throws Exception {
+        long checking = account("Moving checking");
+        long before = call(get("/api/summary"), null).get("plan").get("spentCents").asLong();
+        long couch = txn(checking, LocalDate.now(), -150000, "IKEA ELIZABETH").get("id").asLong();
+        assertThat(call(get("/api/summary"), null).get("plan").get("spentCents").asLong()).isEqualTo(before + 150000);
+
+        assertThat(call(patch("/api/transactions/" + couch), "{\"oneOff\":true}").get("transaction").get("oneOff").asBoolean())
+                .isTrue();
+        assertThat(call(get("/api/summary"), null).get("plan").get("spentCents").asLong()).isEqualTo(before);
+        // Still money that went out: the cash flow counts it.
+        String month = YearMonth.now().toString();
+        assertThat(call(get("/api/flow?from=" + month + "&to=" + month), null).get("spentCents").asLong())
+                .isGreaterThanOrEqualTo(150000);
+    }
+
     // --- helpers ---------------------------------------------------------------------
 
     private long account(String name) throws Exception {

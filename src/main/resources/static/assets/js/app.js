@@ -133,6 +133,7 @@ window.addEventListener('resize', () => {
 (async () => {
   try {
     app.me = await get('/api/me');
+    privacy.setBase(app.me.monthlyPayCents);
   } catch {
     return;
   }

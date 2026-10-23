@@ -24,7 +24,7 @@ public final class Views {
             Long accountId, String accountName, String accountType,
             Long categoryId, String categoryName, String categoryIcon, String categoryKind, String categorySource,
             boolean pending, boolean paired, String notes, boolean manual, boolean reviewed, boolean needsCategory,
-            String logo) {
+            boolean oneOff, String logo) {
 
         public static TxnView of(Transaction t) {
             Category c = t.getCategory();
@@ -35,7 +35,7 @@ public final class Views {
                     c == null ? null : c.getKind().name(),
                     t.getCategorySource() == null ? null : t.getCategorySource().name(),
                     t.isPending(), t.getPairedTxnId() != null, t.getNotes(), t.isEditable(), t.isReviewed(),
-                    c == null || c.hasRole(CategoryRole.UNCATEGORIZED),
+                    c == null || c.hasRole(CategoryRole.UNCATEGORIZED), t.isOneOff(),
                     MerchantLogos.domainFor(t.getMerchant(), t.getDescription()));
         }
     }

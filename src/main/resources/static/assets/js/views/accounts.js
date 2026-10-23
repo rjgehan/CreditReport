@@ -142,7 +142,7 @@ export async function render(params, app) {
     h('section', { class: 'card flush' },
       h('label', { class: 'row' },
         h('div', { class: 'main' }, h('div', { class: 'title' }, 'Show amounts'),
-          h('div', { class: 'meta' }, 'Hidden again whenever the app opens or sits in the background')),
+          h('div', { class: 'meta wrap' }, 'Hidden again whenever the app opens or sits in the background. While hidden, amounts show as a share of a month\'s take-home pay (or months of pay, for big balances)')),
         showAmounts)));
   return root;
 }

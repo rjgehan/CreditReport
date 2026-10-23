@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import cloud.gehan.finance.config.AppProperties;
+import cloud.gehan.finance.service.Budget;
 import cloud.gehan.finance.service.FlowService;
 import cloud.gehan.finance.service.SummaryService;
 
@@ -20,11 +21,13 @@ public class OverviewController {
     private final SummaryService summary;
     private final FlowService flow;
     private final AppProperties props;
+    private final Budget budget;
 
-    public OverviewController(SummaryService summary, FlowService flow, AppProperties props) {
+    public OverviewController(SummaryService summary, FlowService flow, AppProperties props, Budget budget) {
         this.summary = summary;
         this.flow = flow;
         this.props = props;
+        this.budget = budget;
     }
 
     @GetMapping("/api/me")
@@ -33,6 +36,8 @@ public class OverviewController {
         me.put("username", principal.getName());
         me.put("demo", props.demoData());
         me.put("today", LocalDate.now(props.zoneId()).toString());
+        // With amounts hidden, money shows as a share of this: a month of take-home pay.
+        me.put("monthlyPayCents", budget.expectedIncome(YearMonth.now(props.zoneId())));
         return me;
     }
 

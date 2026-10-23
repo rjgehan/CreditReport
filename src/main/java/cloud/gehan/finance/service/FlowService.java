@@ -68,7 +68,8 @@ public class FlowService {
             Map<Bucket, Long> income,
             Map<Bucket, Long> expenses,
             Map<Bucket, Long> savings,
-            List<PayBreakdown> pay) {
+            List<PayBreakdown> pay,
+            long oneOffCents) {
 
         public long cashIncome() {
             return income.values().stream().mapToLong(Long::longValue).sum()
@@ -110,7 +111,7 @@ public class FlowService {
 
         /** Negative when the month was paid for out of savings or on credit. */
         public long leftover() {
-            return cashIncome() + withdrawn() - spent() - savedFromCash();
+            return cashIncome() + withdrawn() - spent() - oneOffCents - savedFromCash();
         }
 
         public Double savingsRate() {
@@ -149,9 +150,15 @@ public class FlowService {
                     ? null : WordMatch.of(s.getMatchPattern()));
         }
 
+        long oneOff = 0;
         for (Transaction t : txns.findVisibleBetween(from, to)) {
             Bucket bucket = bucket(t);
             long amount = t.getAmountCents();
+            // Spent, but kept out of the budget, targets and averages (see Transaction.oneOff).
+            if (t.isOneOff() && bucket.kind() == CategoryKind.EXPENSE) {
+                oneOff -= amount;
+                continue;
+            }
             switch (bucket.kind()) {
                 case TRANSFER -> {
                 }
@@ -191,7 +198,7 @@ public class FlowService {
                 pay.add(new PayBreakdown(stub, (int) tally[0], tally[1]));
             }
         });
-        return new Breakdown(from, to, sortDesc(income), sortDesc(expenses), sortDesc(savings), pay);
+        return new Breakdown(from, to, sortDesc(income), sortDesc(expenses), sortDesc(savings), pay, Math.max(0, oneOff));
     }
 
     private static Paystub stubFor(Transaction t, List<Paystub> stubs, List<WordMatch> patterns) {
@@ -294,7 +301,7 @@ public class FlowService {
             s.link("from-savings", "income", fromSavings, "Income", "income", "💰");
         }
 
-        s.link("income", "spending", spent, "Spending", "expense", "🧾");
+        s.link("income", "spending", spent + b.oneOffCents(), "Spending", "expense", "🧾");
         s.link("income", "saved", savedFromCash, "Saved & invested", "savings", "🐖");
         s.link("income", "leftover", leftover, "Left over", "income", "✨");
 
@@ -312,6 +319,7 @@ public class FlowService {
             }
         }
         s.link("spending", "exp:other", other, "Other spending", "expense", "➕");
+        s.link("spending", "exp:one-off", b.oneOffCents(), "One-off purchases", "expense", "📦");
 
         // Pre-tax 401(k) and the employer match land in Retirement next to any
         // retirement contributions made from cash.
@@ -332,7 +340,7 @@ public class FlowService {
 
         Double rate = b.savingsRate();
         return new Sankey(first.toString(), last.toString(), months, average, s.nodes(), s.links,
-                b.grossIncome() / div, b.cashIncome() / div, spent / div, b.saved() / div,
+                b.grossIncome() / div, b.cashIncome() / div, (spent + b.oneOffCents()) / div, b.saved() / div,
                 leftover / div, rate, !b.pay().isEmpty());
     }
 

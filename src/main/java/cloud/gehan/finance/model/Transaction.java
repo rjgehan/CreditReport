@@ -67,6 +67,13 @@ public class Transaction {
     /** You've looked at it and its category is right. Null on rows from before this existed. */
     private Boolean reviewed;
 
+    /**
+     * A one-off (furniture after a move): still spent, still in cash flow and net worth,
+     * but left out of the budget, spending targets and averages so one big buy doesn't
+     * wreck the rest of the month.
+     */
+    private Boolean oneOff;
+
     @Column(nullable = false)
     private Instant createdAt = Instant.now();
 
@@ -125,5 +132,7 @@ public class Transaction {
     public void setNotes(String notes) { this.notes = notes; }
     public Instant getCreatedAt() { return createdAt; }
     public boolean isReviewed() { return Boolean.TRUE.equals(reviewed); }
+    public boolean isOneOff() { return Boolean.TRUE.equals(oneOff); }
+    public void setOneOff(boolean oneOff) { this.oneOff = oneOff; }
     public void setReviewed(boolean reviewed) { this.reviewed = reviewed; }
 }

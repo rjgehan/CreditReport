@@ -212,7 +212,7 @@ public class TransactionController {
      *        re-file every matching transaction you haven't picked by hand
      */
     public record TxnPatch(Long categoryId, Boolean clearCategory, String notes, Boolean ruleFromThis, String rulePattern,
-            LocalDate day, Long amountCents, String description, Boolean reviewed) {
+            LocalDate day, Long amountCents, String description, Boolean reviewed, Boolean oneOff) {
     }
 
     @PatchMapping("/transactions/{id}")
@@ -224,6 +224,9 @@ public class TransactionController {
             }
             if (body.reviewed() != null) {
                 t.setReviewed(body.reviewed());
+            }
+            if (body.oneOff() != null) {
+                t.setOneOff(body.oneOff());
             }
             // What you typed in yourself can be corrected; what a bank sent can't.
             if (t.isEditable()) {

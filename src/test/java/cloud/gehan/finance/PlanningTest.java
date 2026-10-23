@@ -65,6 +65,17 @@ class PlanningTest {
                 txn(card, m.atDay(d), -(450 + d * 10), "STARBUCKS 1102");
             }
         }
+        // This month's regular charges so far, so none looks stopped late in the month.
+        LocalDate today = LocalDate.now();
+        String[][] regular = { { "1", "-180000", "AVALON RENT", "checking" }, { "9", "-2549", "NETFLIX.COM", "card" },
+                { "11", "-299", "APPLE.COM/BILL", "card" }, { "11", "-1099", "APPLE.COM/BILL", "card" },
+                { "15", "-9000", "PSE&G CO PAYMENT", "checking" }, { "17", "-2999", "PLANET FITNESS CLUB FEES", "checking" } };
+        for (String[] r : regular) {
+            LocalDate day = now.atDay(Integer.parseInt(r[0]));
+            if (!day.isAfter(today)) {
+                txn("checking".equals(r[3]) ? checking : card, day, Long.parseLong(r[1]), r[2]);
+            }
+        }
         seeded = true;
     }
 

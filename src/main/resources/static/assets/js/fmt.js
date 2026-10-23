@@ -6,10 +6,16 @@
 const REHIDE_AFTER_MS = 2 * 60 * 1000;
 let hidden = true;
 let hiddenAt = null;
+let base = null;
 const listeners = new Set();
 
 export const privacy = {
   get on() { return hidden; },
+  /**
+   * A month of take-home pay. With amounts hidden, money shows as a share of it
+   * ("12%") instead of a mask, so a glance still says something.
+   */
+  setBase(cents) { base = cents > 0 ? cents : null; },
   set(on) {
     hidden = !!on;
     document.body.classList.toggle('private', hidden);
@@ -40,12 +46,27 @@ const compact = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'U
  */
 export function money(cents, opts = {}) {
   if (cents === null || cents === undefined) return '—';
-  if (hidden) return opts.sign && cents > 0 ? '+' + MASK : (cents < 0 ? '−' + MASK : MASK);
+  if (hidden) {
+    const text = base ? ofPay(cents) : MASK;
+    return opts.sign && cents > 0 ? '+' + text : (cents < 0 ? '−' + text : text);
+  }
   const dollars = cents / 100;
   const f = opts.compact ? compact : opts.cents ? exact : whole;
   const text = f.format(Math.abs(dollars));
   if (cents < 0) return '−' + text;
   return opts.sign && cents > 0 ? '+' + text : text;
+}
+
+/**
+ * An amount as a share of a month's take-home pay (0.4%, 12%, 150%), or for big
+ * balances as months of pay (15.5 mo), which reads better than 1,550%.
+ */
+function ofPay(cents) {
+  const p = Math.abs(cents) / base * 100;
+  if (p === 0) return '0%';
+  if (p < 0.1) return '<0.1%';
+  if (p >= 200) return (p / 100).toFixed(1) + ' mo';
+  return (p < 10 ? p.toFixed(1) : Math.round(p)) + '%';
 }
 
 /** Shares are a quantity, not money, but still say how much someone owns. */

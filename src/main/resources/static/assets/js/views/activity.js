@@ -142,6 +142,7 @@ export function txnRow(t, onChange, onReviewed) {
   if (t.pending) meta.push('pending');
   if (t.paired) meta.push('transfer');
   if (t.categorySource === 'MANUAL') meta.push('set by you');
+  if (t.oneOff) meta.push('one-off');
   const named = !t.needsCategory;
   const row = h('div', { class: 'row txn' + (t.reviewed ? ' done' : '') });
   const check = h('button', { class: 'check-btn', type: 'button' }, h('span', { class: 'ring' }, icon('check', 14)));
@@ -205,6 +206,7 @@ export async function editTxn(t, onChange, preselect) {
       categorySheet(null, async (made) => { s.close(); if (made) editTxn(t, onChange, made.id); });
     } }, icon('plus', 16), 'New category'));
     const rule = h('input', { type: 'checkbox' });
+    const oneOff = h('input', { type: 'checkbox', checked: t.oneOff });
     const pattern = h('input', { class: 'field', value: '', placeholder: 'Words to match, e.g. STARBUCKS' });
     const notes = h('textarea', { class: 'field', rows: 2, value: t.notes || '' });
     // Typed in by you (an old rent payment, say), so it can be corrected.
@@ -222,6 +224,7 @@ export async function editTxn(t, onChange, preselect) {
         rulePattern: rule.checked ? pattern.value.trim() || null : null,
         // Saving means you've looked at it.
         reviewed: true,
+        oneOff: oneOff.checked !== !!t.oneOff ? oneOff.checked : null,
         amountCents: typed !== null ? (t.amountCents < 0 ? -Math.abs(typed) : Math.abs(typed)) : null,
         day: day && day.value && day.value !== t.day ? day.value : null,
       });
@@ -242,6 +245,7 @@ export async function editTxn(t, onChange, preselect) {
     }).catch(() => clear(reason).append('—'));
     body.append(facts, grid,
       h('div', { class: 'form', style: { marginTop: '16px' } },
+        t.amountCents < 0 ? h('label', { class: 'check' }, oneOff, 'One-off: leave it out of the budget and targets (it still counts in cash flow)') : null,
         h('label', { class: 'check' }, rule, 'Always file transactions like this here'),
         field('Match on', pattern, 'Leave blank to use the merchant name. Applies to past and future transactions you haven\'t set by hand.'),
         amount ? h('div', { class: 'two' }, field('Amount', amount), field('Date', day)) : null,

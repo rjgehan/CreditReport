@@ -3,7 +3,7 @@
 
 import { get, post, put, del } from '../api.js';
 import { h, sheet, toast, field, busy, confirmSheet, icon } from '../ui.js';
-import { money, shares, parseMoney, centsToInput, shortDate, ago, privacy } from '../fmt.js';
+import { money, shares, parseMoney, centsToInput, shortDate, ago, privacy, balance, pct } from '../fmt.js';
 import { editAccount } from './accounts.js';
 
 export async function render(params, app) {
@@ -23,7 +23,8 @@ export async function render(params, app) {
 
   const head = h('section', { class: 'inv-head' },
     h('div', { class: 'inv-name' }, `${a.institution ? a.institution + ' ' : ''}${a.name}`),
-    h('div', { class: 'inv-value' }, money(a.balanceCents, { cents: true })),
+    h('div', { class: 'inv-value' }, balance(a.balanceCents, a.monthAgoCents, { cents: true })),
+    privacy.on ? h('div', { class: 'quiet' }, 'change over the past 30 days') : null,
     today);
 
   const list = h('section', { class: 'card flush' },
@@ -33,13 +34,14 @@ export async function render(params, app) {
     const pctToday = yesterday > 0 ? (100 * x.dayChangeCents) / yesterday : null;
     list.append(h('button', { class: 'inv-row', onclick: () => positionSheet(a, x, refresh) },
       h('span', { class: 'sym' }, h('strong', null, x.symbol), h('span', { class: 'sh' }, `${shares(x.shares)} sh`)),
-      h('span', { class: 'val' }, money(x.valueCents, { cents: true })),
+      // Hidden: each position's share of the account instead of its value.
+      h('span', { class: 'val' }, privacy.on ? pct(a.balanceCents ? x.valueCents / a.balanceCents : null) : money(x.valueCents, { cents: true })),
       h('span', { class: 'chg ' + (pctToday === null ? '' : pctToday >= 0 ? 'up' : 'down') }, pctToday === null ? '—' : signed(pctToday))));
   }
   if (inv.cashCents) {
     list.append(h('button', { class: 'inv-row', onclick: () => cashSheet(a, inv, refresh) },
       h('span', { class: 'sym' }, h('strong', null, 'Cash')),
-      h('span', { class: 'val' }, money(inv.cashCents, { cents: true })),
+      h('span', { class: 'val' }, privacy.on ? pct(a.balanceCents ? inv.cashCents / a.balanceCents : null) : money(inv.cashCents, { cents: true })),
       h('span', { class: 'chg' })));
   }
   if (!inv.holdings.length && !inv.cashCents) {

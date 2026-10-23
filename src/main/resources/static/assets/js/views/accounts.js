@@ -1,6 +1,6 @@
 import { get, post, put, patch, del, upload } from '../api.js';
 import { h, clear, sheet, toast, field, busy, confirmSheet, icon, onMount, logoAvatar, swipeable } from '../ui.js';
-import { money, pct, shares, ago, parseMoney, centsToInput, TYPE_LABEL, shortDate, privacy } from '../fmt.js';
+import { money, pct, shares, ago, parseMoney, centsToInput, TYPE_LABEL, shortDate, privacy, balance, change } from '../fmt.js';
 import { lineChart } from '../charts.js';
 
 const GROUP_ORDER = ['Cash', 'Credit', 'Investments', 'Retirement', 'Loans', 'Other'];
@@ -24,7 +24,8 @@ export async function render(params, app) {
     const chart = h('div', { style: { marginTop: '8px' } });
     root.append(h('section', { class: 'card' },
       h('div', { class: 'nw-top' }, h('span', { class: 'label' }, 'Net worth')),
-      h('div', { class: 'nw-figure' }, money(summary.netWorthCents)),
+      h('div', { class: 'nw-figure' }, privacy.on ? nwChange(summary) : money(summary.netWorthCents)),
+      privacy.on ? h('div', { class: 'meta', style: { color: 'var(--ink-3)' } }, `change over the past ${summary.netWorthChangeDays ?? 30} days`) : null,
       chart));
     onMount(() => lineChart(chart, summary.netWorthHistory, { height: 120 }));
   } else {
@@ -51,7 +52,7 @@ export async function render(params, app) {
     h('div', { class: 'main' },
       h('div', { class: 'title' }, `${a.institution ? a.institution + ' ' : ''}${a.name}`),
       sub.length ? h('div', { class: 'meta' }, sub.join(' · ')) : null),
-    h('div', { class: 'amount' }, money(a.balanceCents, { cents: true })));
+    h('div', { class: 'amount' }, balance(a.balanceCents, a.monthAgoCents, { cents: true, owed: owes(a) })));
     return a.hidden
       ? swipeable(row, 'Show', () => setHidden(a, false), 'show')
       : swipeable(row, 'Hide', () => setHidden(a, true));
@@ -62,8 +63,13 @@ export async function render(params, app) {
   for (const [name, list] of groups) {
     if (!list.length) continue;
     const total = list.reduce((s, a) => s + a.balanceCents, 0);
+    // The group's change, over the accounts that have a balance from a month ago.
+    const known = list.filter((a) => a.monthAgoCents !== null && a.monthAgoCents !== undefined);
+    const thenTotal = known.length ? known.reduce((s, a) => s + a.monthAgoCents, 0) : null;
+    const nowKnown = known.reduce((s, a) => s + a.balanceCents, 0);
+    const owedGroup = list.every(owes);
     root.append(h('section', { class: 'card flush' },
-      h('div', { class: 'card-head', style: { padding: '14px 16px 4px' } }, h('h2', null, name), h('strong', null, money(total))),
+      h('div', { class: 'card-head', style: { padding: '14px 16px 4px' } }, h('h2', null, name), h('strong', null, privacy.on ? (owedGroup ? change(Math.abs(nowKnown), thenTotal === null ? null : Math.abs(thenTotal)) : change(nowKnown, thenTotal)) : money(total))),
       h('div', { class: 'list' }, list.map(accountRow))));
   }
 
@@ -142,9 +148,18 @@ export async function render(params, app) {
     h('section', { class: 'card flush' },
       h('label', { class: 'row' },
         h('div', { class: 'main' }, h('div', { class: 'title' }, 'Show amounts'),
-          h('div', { class: 'meta wrap' }, 'Hidden again whenever the app opens or sits in the background. While hidden, amounts show as a share of a month\'s take-home pay (or months of pay, for big balances)')),
+          h('div', { class: 'meta wrap' }, 'Hidden again whenever the app opens or sits in the background. While hidden, amounts show as a share of a month\'s take-home pay and balances as their change over the past month')),
         showAmounts)));
   return root;
+}
+
+function owes(a) {
+  return a.type === 'CREDIT_CARD' || a.type === 'LOAN';
+}
+
+function nwChange(s) {
+  const p = s.netWorthChangePercent;
+  return p === null || p === undefined ? '—' : (p >= 0 ? '+' : '−') + Math.abs(p).toFixed(1) + '%';
 }
 
 function avatarFor(a) {
@@ -242,7 +257,7 @@ export function editAccount(a, done, afterDelete) {
 
     body.append(h('div', { class: 'hero', style: { padding: '0 0 12px' } },
       h('div', { class: 'label' }, TYPE_LABEL[a.type] + (a.manual ? ' · updated by hand' : '')),
-      h('div', { class: 'figure', style: { fontSize: '34px' } }, money(a.balanceCents, { cents: true }))));
+      h('div', { class: 'figure', style: { fontSize: '34px' } }, balance(a.balanceCents, a.monthAgoCents, { cents: true, owed: owes(a) }))));
 
     if (a.manual && !invest) {
       const bal = h('input', { class: 'field', inputmode: 'decimal', value: centsToInput(a.type === 'CREDIT_CARD' || a.type === 'LOAN' ? -a.balanceCents : a.balanceCents) });

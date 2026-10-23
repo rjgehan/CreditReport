@@ -2,7 +2,7 @@
 // No library: a few small charts don't justify one, and this keeps the CSP strict.
 
 import { h, clear } from './ui.js';
-import { money, pct, KIND_COLOR, monthLabel, shortDate, privacy } from './fmt.js';
+import { money, pct, KIND_COLOR, monthLabel, shortDate, privacy, change } from './fmt.js';
 
 function tooltip(container) {
   let tip = container.querySelector(':scope > .tooltip');
@@ -209,7 +209,8 @@ export function lineChart(container, points, opts = {}) {
   for (let i = 0; i < 3; i++) {
     const c = lo + ((hi - lo) * (i + 0.5)) / 3;
     svg.append(h('line', { class: 'grid-line', x1: 0, x2: width, y1: y(c), y2: y(c) }));
-    svg.append(h('text', { x: width - 2, y: y(c) - 4, 'text-anchor': 'end' }, money(Math.round(c), { compact: true })));
+    // Hidden amounts: the line's shape still shows, the scale doesn't.
+    if (!privacy.on) svg.append(h('text', { x: width - 2, y: y(c) - 4, 'text-anchor': 'end' }, money(Math.round(c), { compact: true })));
   }
   const seen = new Set();
   for (const p of points) {
@@ -239,7 +240,7 @@ export function lineChart(container, points, opts = {}) {
     cross.setAttribute('x1', x(best)); cross.setAttribute('x2', x(best)); cross.setAttribute('visibility', 'visible');
     dot.setAttribute('cx', x(best)); dot.setAttribute('cy', y(best.cents)); dot.setAttribute('visibility', 'visible');
     tip.show((x(best) / width) * r.width, (y(best.cents) / height) * r.height, shortDate(best.day),
-      [{ value: money(best.cents), name: opts.label || 'Net worth', color }]);
+      [{ value: privacy.on ? change(best.cents, points[0].cents) + ' since ' + shortDate(points[0].day) : money(best.cents), name: opts.label || 'Net worth', color }]);
   });
   hit.addEventListener('pointerleave', () => { cross.setAttribute('visibility', 'hidden'); dot.setAttribute('visibility', 'hidden'); tip.hide(); });
   svg.append(hit);

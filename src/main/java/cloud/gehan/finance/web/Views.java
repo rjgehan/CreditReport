@@ -43,16 +43,21 @@ public final class Views {
     public record AccountView(Long id, String name, String institution, String mask, String type, String group,
             long balanceCents, Long availableCents, Long creditLimitCents, Long statementBalanceCents,
             Long minimumPaymentCents, LocalDate paymentDueDate, Double aprPercent, boolean hidden, boolean manual,
-            Long connectionId, String provider, Instant balanceUpdatedAt, String logo) {
+            Long connectionId, String provider, Instant balanceUpdatedAt, String logo, Long monthAgoCents) {
 
         public static AccountView of(Account a) {
+            return of(a, null);
+        }
+
+        /** @param monthAgoCents the balance 30 days ago, for the change shown while amounts are hidden */
+        public static AccountView of(Account a, Long monthAgoCents) {
             Connection c = a.getConnection();
             return new AccountView(a.getId(), a.getName(), a.getInstitution(), a.getMask(), a.getType().name(),
                     a.getType().group(), a.getBalanceCents(), a.getAvailableCents(), a.getCreditLimitCents(),
                     a.getStatementBalanceCents(), a.getMinimumPaymentCents(), a.getPaymentDueDate(),
                     a.getAprPercent(), a.isHidden(), a.isManual(),
                     c == null ? null : c.getId(), c == null ? "MANUAL" : c.getProvider().name(),
-                    a.getBalanceUpdatedAt(), MerchantLogos.domainFor(a.getInstitution(), a.getName()));
+                    a.getBalanceUpdatedAt(), MerchantLogos.domainFor(a.getInstitution(), a.getName()), monthAgoCents);
         }
     }
 

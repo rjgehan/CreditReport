@@ -29,4 +29,10 @@ public class Balances {
         snapshot.setBalanceCents(balanceCents);
         snapshots.save(snapshot);
     }
+
+    /** The balance on or before 30 days ago, or null when the history doesn't reach back that far. */
+    public Long monthAgo(cloud.gehan.finance.model.Account account, java.time.LocalDate today) {
+        return snapshots.findTopByAccountAndDayLessThanEqualOrderByDayDesc(account, today.minusDays(30))
+                .map(s -> s.getBalanceCents()).orElse(null);
+    }
 }

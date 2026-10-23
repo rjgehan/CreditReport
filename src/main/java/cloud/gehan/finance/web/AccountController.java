@@ -69,7 +69,7 @@ public class AccountController {
         return accounts.findAll().stream()
                 .sorted(Comparator.comparing((Account a) -> a.getType().ordinal())
                         .thenComparing(a -> -Math.abs(a.getBalanceCents())))
-                .map(AccountView::of).toList();
+                .map(a -> AccountView.of(a, balances.monthAgo(a, LocalDate.now(props.zoneId())))).toList();
     }
 
     public record NewAccount(@NotBlank String name, String institution, @NotNull AccountType type, long balanceCents,

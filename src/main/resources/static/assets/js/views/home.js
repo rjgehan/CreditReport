@@ -27,6 +27,12 @@ export async function render(params, app) {
 
 // --- Net worth ------------------------------------------------------------------
 
+function netWorthChange(d) {
+  if (d.netWorthChangePercent === null || d.netWorthChangePercent === undefined) return '—';
+  const p = d.netWorthChangePercent;
+  return (p >= 0 ? '+' : '−') + Math.abs(p).toFixed(1) + '%';
+}
+
 function netWorth(d) {
   let change = null;
   if (d.netWorthChangeCents !== null) {
@@ -34,13 +40,15 @@ function netWorth(d) {
     const percent = d.netWorthChangePercent === null ? null
       : (up ? '+' : '−') + Math.abs(d.netWorthChangePercent).toFixed(1) + '%';
     const amount = privacy.on ? null : money(d.netWorthChangeCents, { sign: true });
+    // Hidden, the big figure already is the change, so this line just says over what.
     change = h('div', { class: 'nw-change ' + (up ? 'up' : 'down') },
-      [amount, percent].filter(Boolean).join(' · '), h('span', { class: 'quiet' }, ` past ${d.netWorthChangeDays ?? 30} days`));
+      privacy.on ? '' : [amount, percent].filter(Boolean).join(' · '),
+      h('span', { class: 'quiet' }, privacy.on ? `change over the past ${d.netWorthChangeDays ?? 30} days` : ` past ${d.netWorthChangeDays ?? 30} days`));
   }
   return h('a', { class: 'card nw', href: '#/accounts', 'aria-label': 'Net worth, open accounts' },
     h('div', { class: 'nw-top' }, h('span', { class: 'label' }, 'Net worth'), syncStatus(d)),
     h('div', { class: 'nw-main' },
-      h('span', { class: 'nw-figure' }, money(d.netWorthCents)),
+      h('span', { class: 'nw-figure' }, privacy.on ? netWorthChange(d) : money(d.netWorthCents)),
       sparkline(d.netWorthSpark, (d.netWorthChangeCents ?? 0) >= 0)),
     change);
 }

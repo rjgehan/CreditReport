@@ -57,16 +57,31 @@ export function money(cents, opts = {}) {
   return opts.sign && cents > 0 ? '+' + text : text;
 }
 
-/**
- * An amount as a share of a month's take-home pay (0.4%, 12%, 150%), or for big
- * balances as months of pay (15.5 mo), which reads better than 1,550%.
- */
+/** An amount as a share of a month's take-home pay: 0.4%, 12%, 150%. */
 function ofPay(cents) {
   const p = Math.abs(cents) / base * 100;
   if (p === 0) return '0%';
   if (p < 0.1) return '<0.1%';
-  if (p >= 200) return (p / 100).toFixed(1) + ' mo';
-  return (p < 10 ? p.toFixed(1) : Math.round(p)) + '%';
+  return (p < 10 ? p.toFixed(1) : Math.round(p).toLocaleString('en-US')) + '%';
+}
+
+/**
+ * A balance (an account, net worth): the amount, or with amounts hidden, how much it
+ * moved since a month ago (+3.2%), which says how it's going without saying how much.
+ */
+export function balance(cents, monthAgoCents, opts = {}) {
+  if (!hidden) return money(cents, opts);
+  // A card or loan: the change in what you owe, so paying it down reads as a fall.
+  if (opts.owed) return change(Math.abs(cents), monthAgoCents === null || monthAgoCents === undefined ? null : Math.abs(monthAgoCents));
+  return change(cents, monthAgoCents);
+}
+
+/** +3.2% / −1.0% from then to now; — when there's nothing to compare with. */
+export function change(now, then) {
+  if (now === null || now === undefined || then === null || then === undefined || then === 0) return '—';
+  const p = (now - then) / Math.abs(then) * 100;
+  if (Math.abs(p) < 0.05) return '0.0%';
+  return (p > 0 ? '+' : '−') + Math.abs(p).toFixed(1) + '%';
 }
 
 /** Shares are a quantity, not money, but still say how much someone owns. */

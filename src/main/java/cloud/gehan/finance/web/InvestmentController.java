@@ -51,9 +51,11 @@ public class InvestmentController {
     private final QuoteClient quotes;
     private final TransactionTemplate tx;
     private final AppProperties props;
+    private final cloud.gehan.finance.service.Balances balances;
 
     public InvestmentController(AccountRepository accounts, HoldingRepository holdings, RecurringBuyRepository recurring,
-            PortfolioService portfolio, QuoteClient quotes, TransactionTemplate tx, AppProperties props) {
+            PortfolioService portfolio, QuoteClient quotes, TransactionTemplate tx, AppProperties props, cloud.gehan.finance.service.Balances balances) {
+        this.balances = balances;
         this.accounts = accounts;
         this.holdings = holdings;
         this.recurring = recurring;
@@ -111,7 +113,7 @@ public class InvestmentController {
                 .sorted(Comparator.comparingLong(Holding::valueCents).reversed()).toList();
         long dayChange = held.stream().mapToLong(Holding::dayChangeCents).sum();
         long yesterday = held.stream().mapToLong(h -> h.valueCents() - h.dayChangeCents()).sum();
-        return new InvestmentAccount(AccountView.of(a), a.getCashCents(),
+        return new InvestmentAccount(AccountView.of(a, balances.monthAgo(a, today)), a.getCashCents(),
                 held.stream().map(HoldingView::of).toList(),
                 recurring.findByAccount(a).stream().map(p -> PlanView.of(p, today)).toList(),
                 dayChange, yesterday > 0 ? 100.0 * dayChange / yesterday : null);

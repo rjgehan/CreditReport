@@ -142,13 +142,13 @@ export async function render(params, app) {
 
   // Tucked at the very bottom on purpose: easy to find when you know, unlikely to
   // be tapped by someone poking around. Amounts hide again whenever the app opens.
-  const showAmounts = h('input', { type: 'checkbox', class: 'switch', checked: !privacy.on, 'aria-label': 'Show amounts' });
+  const showAmounts = h('input', { type: 'checkbox', class: 'switch', checked: !privacy.on, 'aria-label': 'Show balances' });
   showAmounts.addEventListener('change', () => privacy.set(!showAmounts.checked));
   root.append(h('div', { class: 'section-title' }, 'Privacy'),
     h('section', { class: 'card flush' },
       h('label', { class: 'row' },
-        h('div', { class: 'main' }, h('div', { class: 'title' }, 'Show amounts'),
-          h('div', { class: 'meta wrap' }, 'Hidden again whenever the app opens or sits in the background. While hidden, amounts show as a share of a month\'s take-home pay and balances as their change over the past month')),
+        h('div', { class: 'main' }, h('div', { class: 'title' }, 'Show balances'),
+          h('div', { class: 'meta wrap' }, 'Hides net worth and account balances; while hidden they show their change over the past month. Spending, bills and goals always show. Hidden again whenever the app opens or sits in the background')),
         showAmounts)));
   return root;
 }
@@ -260,7 +260,9 @@ export function editAccount(a, done, afterDelete) {
       h('div', { class: 'figure', style: { fontSize: '34px' } }, balance(a.balanceCents, a.monthAgoCents, { cents: true, owed: owes(a) }))));
 
     if (a.manual && !invest) {
-      const bal = h('input', { class: 'field', inputmode: 'decimal', value: centsToInput(a.type === 'CREDIT_CARD' || a.type === 'LOAN' ? -a.balanceCents : a.balanceCents) });
+      // A balance: not filled in while balances are hidden; typing a new one still works.
+      const bal = h('input', { class: 'field', inputmode: 'decimal', placeholder: privacy.on ? 'Hidden. Type the new balance' : '',
+        value: privacy.on ? '' : centsToInput(a.type === 'CREDIT_CARD' || a.type === 'LOAN' ? -a.balanceCents : a.balanceCents) });
       const go = h('button', { class: 'btn primary' }, 'Update balance');
       go.addEventListener('click', busy(go, async () => {
         let cents = parseMoney(bal.value);

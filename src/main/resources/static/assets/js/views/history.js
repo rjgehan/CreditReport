@@ -38,11 +38,7 @@ function recapCard(r) {
     return h('section', { class: 'card recap' }, head, h('div', { class: 'empty' }, 'No activity this month.'));
   }
   const facts = [];
-  if (privacy.on) {
-    if (s.savingsRate !== null) facts.push(`Kept ${pct(s.savingsRate)}`);
-  } else {
-    facts.push(`Kept ${money(s.keptCents)}`);
-  }
+  facts.push(`Kept ${money(s.keptCents)}`);
   if (s.netWorthChangePercent !== null) facts.push(`Net worth ${signed(s.netWorthChangePercent)}`);
 
   // The four parts of the score as bars; the sentence behind each is in its tooltip.
@@ -62,7 +58,7 @@ function recapCard(r) {
       const dir = c.previousCents === 0 || delta === 0 ? '' : delta > 0 ? 'more' : 'less';
       const change = c.previousCents === 0 ? 'new'
         : delta === 0 ? 'same'
-          : privacy.on ? `${Math.abs(100 * delta / c.previousCents).toFixed(0)}%` : money(Math.abs(delta));
+          : money(Math.abs(delta));
       list.append(h('a', { class: 'cat-row', href: `#/activity?category=${c.categoryId ?? 'none'}&month=${s.month}`,
         'aria-label': `${c.name} ${money(c.cents)}, ${dir ? (dir === 'more' ? 'up ' : 'down ') + change : change} from the month before` },
       h('span', { class: 'name' }, c.name),

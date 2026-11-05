@@ -13,6 +13,7 @@ import * as investment from './views/investment.js';
 import * as shortcut from './views/shortcut.js';
 import * as bills from './views/bills.js';
 import * as recurring from './views/recurring.js';
+import * as forecast from './views/forecast.js';
 import * as categoriesView from './views/categories.js';
 
 // Tabs first; the rest are screens reached from a tab, with a back button to it.
@@ -22,6 +23,7 @@ const ROUTES = [
   { path: 'activity', title: 'Activity', icon: 'list', view: activity },
   { path: 'accounts', title: 'Accounts', icon: 'bank', view: accounts },
   { path: 'history', title: 'History', icon: 'calendar', view: history },
+  { path: 'month', title: 'This month', parent: 'home', view: forecast },
   { path: 'targets', title: 'Spending targets', parent: 'home', view: { render: plan.targetsPage } },
   { path: 'goals', title: 'Goals', parent: 'home', view: { render: plan.goalsPage } },
   { path: 'paychecks', title: 'Paychecks', parent: 'flow', view: { render: plan.paychecksPage } },
@@ -133,7 +135,6 @@ window.addEventListener('resize', () => {
 (async () => {
   try {
     app.me = await get('/api/me');
-    privacy.setBase(app.me.monthlyPayCents);
   } catch {
     return;
   }

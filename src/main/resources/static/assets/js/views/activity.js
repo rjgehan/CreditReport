@@ -211,7 +211,7 @@ export async function editTxn(t, onChange, preselect) {
     const notes = h('textarea', { class: 'field', rows: 2, value: t.notes || '' });
     // Typed in by you (an old rent payment, say), so it can be corrected.
     const amount = t.manual ? h('input', { class: 'field', inputmode: 'decimal',
-      value: privacy.on ? '' : centsToInput(Math.abs(t.amountCents)), placeholder: privacy.on ? 'Hidden. Type a new amount' : '' }) : null;
+      value: centsToInput(Math.abs(t.amountCents)) }) : null;
     const day = t.manual ? h('input', { class: 'field', type: 'date', value: t.day }) : null;
     const save = h('button', { class: 'btn primary' }, 'Save');
     save.addEventListener('click', busy(save, async () => {

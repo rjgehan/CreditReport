@@ -52,8 +52,8 @@ function targetSheet(cats, existing, refresh) {
   sheet(existing ? existing.name : 'New spending target', (body, s) => {
     const cat = h('select', { class: 'field', disabled: !!existing },
       cats.filter((c) => c.kind === 'EXPENSE').map((c) => h('option', { value: c.id, selected: existing && c.id === existing.categoryId }, `${c.icon || ''} ${c.name}`)));
-    // With amounts hidden, the current limit isn't prefilled; a blank field keeps it.
-    const hidden = privacy.on && existing;
+    // Targets aren't balances, so they show even while balances are hidden.
+    const hidden = false;
     const limit = h('input', { class: 'field', inputmode: 'decimal', value: existing && !hidden ? centsToInput(existing.limitCents) : '',
       placeholder: hidden ? 'Hidden. Type a new amount' : 'e.g. 400' });
     const save = h('button', { class: 'btn primary' }, 'Save');
@@ -375,9 +375,7 @@ function goalRow(g) {
 
 function savingsTargetSheet(current, refresh) {
   sheet('Savings target', (body, s) => {
-    // With amounts hidden the current target isn't shown, even here; typing a new
-    // one still works, and a blank field leaves it as it was.
-    const hidden = privacy.on;
+    const hidden = false;
     const amount = h('input', { class: 'field', inputmode: 'decimal', value: hidden ? '' : centsToInput(current),
       placeholder: hidden && current !== null ? 'Hidden. Type a new amount' : 'e.g. 1000' });
     const save = h('button', { class: 'btn primary' }, 'Save');

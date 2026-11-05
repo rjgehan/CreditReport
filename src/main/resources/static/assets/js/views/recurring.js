@@ -97,7 +97,7 @@ function chargeSheet(c, refresh) {
   sheet(c ? c.name : 'Add a regular charge', (body, s) => {
     const name = h('input', { class: 'field', value: c?.name || '', placeholder: 'e.g. Amazon Prime' });
     const amount = h('input', { class: 'field', inputmode: 'decimal',
-      value: c && !privacy.on ? centsToInput(c.amountCents) : '', placeholder: c && privacy.on ? 'Hidden. Type a new amount' : 'e.g. 139' });
+      value: c ? centsToInput(c.amountCents) : '', placeholder: 'e.g. 139' });
     const every = h('select', { class: 'field' }, Object.entries(EVERY).map(([k, label]) =>
       h('option', { value: k, selected: (c?.cadence || 'MONTHLY') === k }, label)));
     const kind = h('select', { class: 'field' }, SECTIONS.map(([k, label]) =>
@@ -106,7 +106,6 @@ function chargeSheet(c, refresh) {
     const save = h('button', { class: 'btn primary' }, c ? 'Save' : 'Add');
     save.addEventListener('click', busy(save, async () => {
       let cents = parseMoney(amount.value);
-      if ((!cents || cents <= 0) && c && privacy.on) cents = c.amountCents;
       if (!name.value.trim()) { toast('Give it a name'); return; }
       if (!cents || cents <= 0) { toast('Type what each charge is'); return; }
       const payload = { name: name.value.trim(), amountCents: Math.abs(cents), cadence: every.value, kind: kind.value,

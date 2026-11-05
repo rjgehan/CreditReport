@@ -1,16 +1,17 @@
 // Home answers one question at a glance: am I OK right now?
-// Net worth and its direction, what's left to spend this month, which targets
-// are tight, then goals. Tapping a card opens what manages it.
+// Net worth and its direction, what's free to spend for the rest of the month,
+// which targets are tight, then goals. Tapping a card opens what manages it.
 
 import { get, post } from '../api.js';
 import { h, toast, busy, icon } from '../ui.js';
 import { money, pct, monthLabel, ago, shortDate, privacy, parseDay, depositLine, filedLine } from '../fmt.js';
 import { meter } from '../charts.js';
+import { forecastCard } from './forecast.js';
 
 const MAX_TARGETS = 6;
 
 export async function render(params, app) {
-  const d = await get('/api/summary');
+  const [d, f] = await Promise.all([get('/api/summary'), get('/api/forecast')]);
 
   if (!d.hasAccounts) {
     return h('div', { class: 'card empty' },
@@ -20,7 +21,7 @@ export async function render(params, app) {
 
   // With no income on record the month card can't say much, so help find the paycheck first.
   const setup = d.plan.incomeCents === 0 ? await incomeSetup(app) : null;
-  const left = h('div', { class: 'home-col' }, netWorth(d), setup, thisMonth(d), dueCards(d));
+  const left = h('div', { class: 'home-col' }, netWorth(d), setup, forecastCard(f), dueCards(d));
   const right = h('div', { class: 'home-col' }, targets(d), goals(d));
   return h('div', { class: 'grid two' }, left, right);
 }
@@ -86,42 +87,6 @@ function syncStatus(d) {
   return h('span', { class: 'status' + (hours > 36 ? ' stale' : '') }, `Synced ${ago(d.lastSyncedAt)}`);
 }
 
-// --- This month: income, minus what you keep, minus what you spend ----------------
-
-const PILL = { ok: 'good', watch: 'warn', over: 'bad' };
-
-function thisMonth(d) {
-  const p = d.plan;
-  let big;
-  if (privacy.on) {
-    big = p.leftToSpendCents < 0
-      ? h('span', { class: 'big down' }, 'Over', h('span', { class: 'unit' }, ' budget'))
-      : h('span', { class: 'big' }, pct(Math.max(0, p.spentFraction)), h('span', { class: 'unit' }, ' used'));
-  } else if (p.leftToSpendCents >= 0) {
-    big = h('span', { class: 'big' }, money(p.leftToSpendCents), h('span', { class: 'unit' }, ' left to spend'));
-  } else {
-    big = h('span', { class: 'big down' }, money(-p.leftToSpendCents), h('span', { class: 'unit' }, ' over'));
-  }
-  const flowLink = `#/flow?range=month&month=${p.month}`;
-
-  return h('section', { class: 'card month' },
-    h('div', { class: 'month-head' },
-      h('span', { class: 'name' }, monthLabel(p.month)),
-      h('span', { class: 'day' }, `Day ${p.dayOfMonth} of ${p.daysInMonth}`)),
-    h('div', { class: 'month-figure' }, big, h('span', { class: 'pill ' + PILL[p.status] }, p.verdict)),
-    meter(p.spentFraction, p.status, p.current ? p.expectedFraction : null, 'lg'),
-    h('hr', { class: 'month-rule' }),
-    h('div', { class: 'strip two' },
-      stat('Income', 'var(--income)', (p.incomeEstimated ? '~' : '') + money(p.incomeCents), flowLink),
-      stat('Spent', 'var(--expense)', money(p.spentCents), flowLink)));
-}
-
-function stat(label, color, value, href) {
-  return h(href ? 'a' : 'div', { class: 'stat', href },
-    h('div', { class: 'label' }, color ? h('span', { class: 'key', style: { background: color } }) : null, label),
-    h('div', { class: 'value' }, value));
-}
-
 // --- Cards due soon (only when one is) ------------------------------------------
 
 function dueCards(d) {
@@ -152,14 +117,14 @@ function targets(d) {
   const card = h('section', { class: 'card flush tcard' },
     h('a', { class: 'tcard-head', href: '#/targets' },
       h('h2', null, 'Spending targets', all.length > MAX_TARGETS ? h('span', { class: 'more' }, ` · ${shown.length} of ${all.length}`) : null),
-      h('span', { class: 'col' }, privacy.on ? 'Used' : 'Left')));
+      h('span', { class: 'col' }, 'Left')));
   for (const s of shown) {
     const left = s.limitCents - s.spentCents;
     // The whole box opens the targets screen; each category's transactions are a tap away there.
     card.append(h('a', { class: 'trow', href: '#/targets' },
       h('span', { class: 'name' }, s.name),
       meter(s.fraction, s.status, s.expectedFraction, 'sm'),
-      h('span', { class: 'amt' + (left < 0 && !privacy.on ? ' down' : '') }, privacy.on ? pct(s.fraction) : money(left))));
+      h('span', { class: 'amt' + (left < 0 ? ' down' : '') }, money(left))));
   }
   return card;
 }
@@ -175,8 +140,6 @@ function goals(d) {
     let value;
     if (g.type === 'SAVINGS_RATE') {
       value = `${g.currentPercent === null ? '—' : g.currentPercent.toFixed(0) + '%'} of ${g.targetPercent}%`;
-    } else if (privacy.on) {
-      value = pct(Math.min(g.fraction, 1));
     } else {
       value = `${money(g.currentCents)} of ${money(g.targetCents)}`;
     }

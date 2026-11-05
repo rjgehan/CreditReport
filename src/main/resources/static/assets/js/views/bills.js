@@ -75,7 +75,7 @@ function addSheet(b, accounts, month, missing, historyStart, refresh) {
     const from = h('select', { class: 'field' }, open.map((a) =>
       h('option', { value: a.id, selected: a.id === (b.usualAccountId ?? fallback?.id) }, `${a.institution ? a.institution + ' ' : ''}${a.name}`)));
     const amount = h('input', { class: 'field', inputmode: 'decimal',
-      value: b.lastPaidCents && !privacy.on ? centsToInput(b.lastPaidCents) : '', placeholder: 'e.g. 1450' });
+      value: b.lastPaidCents ? centsToInput(b.lastPaidCents) : '', placeholder: 'e.g. 1450' });
     const target = month || missing[0];
     const day = h('input', { class: 'field', type: 'date', value: `${target}-01` });
     const others = missing.filter((m) => m !== target);

@@ -1,4 +1,4 @@
-// Number and date formatting, and the privacy switch that masks every amount.
+// Number and date formatting, and the privacy switch that hides balances.
 
 // Amounts start hidden every time the app opens, and hide again after a few
 // minutes in the background, so handing someone the phone never shows them.
@@ -6,16 +6,14 @@
 const REHIDE_AFTER_MS = 2 * 60 * 1000;
 let hidden = true;
 let hiddenAt = null;
-let base = null;
 const listeners = new Set();
 
 export const privacy = {
-  get on() { return hidden; },
   /**
-   * A month of take-home pay. With amounts hidden, money shows as a share of it
-   * ("12%") instead of a mask, so a glance still says something.
+   * Balances hidden: net worth, what's in each account, investments. Spending,
+   * transactions, bills and goals always show; they say what you did, not what you have.
    */
-  setBase(cents) { base = cents > 0 ? cents : null; },
+  get on() { return hidden; },
   set(on) {
     hidden = !!on;
     document.body.classList.toggle('private', hidden);
@@ -43,26 +41,16 @@ const compact = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'U
  * @param opts.cents show cents (transactions); otherwise whole dollars
  * @param opts.sign prefix + for positive amounts
  * @param opts.compact $12.4K style, for axes and tight spaces
+ * @param opts.secret a balance with nothing to compare it to: masked while balances are hidden
  */
 export function money(cents, opts = {}) {
   if (cents === null || cents === undefined) return '—';
-  if (hidden) {
-    const text = base ? ofPay(cents) : MASK;
-    return opts.sign && cents > 0 ? '+' + text : (cents < 0 ? '−' + text : text);
-  }
+  if (hidden && opts.secret) return opts.sign && cents > 0 ? '+' + MASK : (cents < 0 ? '−' + MASK : MASK);
   const dollars = cents / 100;
   const f = opts.compact ? compact : opts.cents ? exact : whole;
   const text = f.format(Math.abs(dollars));
   if (cents < 0) return '−' + text;
   return opts.sign && cents > 0 ? '+' + text : text;
-}
-
-/** An amount as a share of a month's take-home pay: 0.4%, 12%, 150%. */
-function ofPay(cents) {
-  const p = Math.abs(cents) / base * 100;
-  if (p === 0) return '0%';
-  if (p < 0.1) return '<0.1%';
-  return (p < 10 ? p.toFixed(1) : Math.round(p).toLocaleString('en-US')) + '%';
 }
 
 /**

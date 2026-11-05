@@ -124,7 +124,7 @@ export function sankey(container, data, opts = {}) {
     l.el = path;
     path.addEventListener('pointermove', (e) => {
       const r = container.getBoundingClientRect();
-      const value = privacy.on ? share(l.valueCents) : `${money(l.valueCents)}${total ? ' · ' + share(l.valueCents) : ''}`;
+      const value = `${money(l.valueCents)}${total ? ' · ' + share(l.valueCents) : ''}`;
       tip.show(e.clientX - r.left, e.clientY - r.top, `${l.s.label} → ${l.t.label}`, [{ value, color: KIND_COLOR[l.t.kind] }]);
     });
     path.addEventListener('pointerleave', () => tip.hide());
@@ -140,7 +140,7 @@ export function sankey(container, data, opts = {}) {
     if (n.col === maxDepth) {
       // The label column: one line each, so a tall stack of small categories doesn't collide.
       const name = h('tspan', null, n.label);
-      const value = privacy.on ? share(n.value) : money(n.value);
+      const value = money(n.value);
       const text = h('text', { class: 'node-label', x: lx, y: cy + 4 }, name, ' ', h('tspan', { class: 'node-value' }, value));
       g.append(text);
       lastColLabels.push({ text, name, full: n.label });
@@ -148,8 +148,7 @@ export function sankey(container, data, opts = {}) {
       g.append(h('text', { class: 'node-label', x: lx, y: cy - 1 }, n.label));
       // The source column shows amounts only; the middle column adds its share of income.
       let value = null;
-      if (privacy.on) value = n.col === 0 ? null : share(n.value);
-      else value = n.col === 0 ? money(n.value) : `${money(n.value)}${total ? ' · ' + share(n.value) : ''}`;
+      value = n.col === 0 ? money(n.value) : `${money(n.value)}${total ? ' · ' + share(n.value) : ''}`;
       if (value) g.append(h('text', { class: 'node-value', x: lx, y: cy + 13 }, value));
     }
     const highlight = (on) => {

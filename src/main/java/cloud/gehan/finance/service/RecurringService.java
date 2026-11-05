@@ -65,11 +65,12 @@ public class RecurringService {
      * @param amountCents each charge (the latest one)
      * @param monthlyCents what it comes to a month
      * @param nextDate when it's next due; today when it's due and hasn't come through yet
+     * @param expected the day it was due, even if that's already gone by (null once it seems to have stopped)
      * @param search what to look for in Activity to see its charges
      */
     public record Item(String key, Long chargeId, String name, RecurringKind kind, String cadence, long amountCents,
-            long monthlyCents, LocalDate lastDate, LocalDate nextDate, String categoryName, String accountName,
-            String logo, String search, int count) {
+            long monthlyCents, LocalDate lastDate, LocalDate nextDate, LocalDate expected, String categoryName,
+            String accountName, String logo, String search, int count) {
     }
 
     /**
@@ -92,9 +93,10 @@ public class RecurringService {
             (f.active() ? active : stopped).add(f.item());
         }
         for (RecurringCharge c : mine) {
+            LocalDate next = nextOnOrAfter(c.getNextDate(), c.getCadence(), today);
             active.add(new Item(null, c.getId(), c.getName(), c.getKind(), c.getCadence().name(), c.getAmountCents(),
-                    c.getCadence().monthly(c.getAmountCents()), null, nextOnOrAfter(c.getNextDate(), c.getCadence(), today),
-                    null, null, MerchantLogos.domainFor(c.getName()), c.getName(), 0));
+                    c.getCadence().monthly(c.getAmountCents()), null, next, next, null, null,
+                    MerchantLogos.domainFor(c.getName()), c.getName(), 0));
         }
         active.sort(Comparator.comparingLong(Item::monthlyCents).reversed());
         stopped.sort(Comparator.comparing(Item::lastDate).reversed());
@@ -163,7 +165,7 @@ public class RecurringService {
             Transaction last = r.last();
             Category c = last.getCategory();
             found.add(new Found(new Item(key, null, display(last, r.payee()), r.kind(), r.cadence().name(), r.amount(),
-                    r.cadence().monthly(r.amount()), last.getDay(), r.next(), c == null ? null : c.getName(),
+                    r.cadence().monthly(r.amount()), last.getDay(), r.next(), r.expected(), c == null ? null : c.getName(),
                     last.getAccount().getName(), MerchantLogos.domainFor(last.getMerchant(), last.getDescription()),
                     search(last, r.payee()), r.count()), r.active()));
         }
@@ -175,7 +177,8 @@ public class RecurringService {
         boolean spending = c == null || c.getKind() == CategoryKind.EXPENSE;
         boolean catchAll = c == null || c.hasRole(CategoryRole.UNCATEGORIZED);
         return t.getAmountCents() < 0 && spending && !t.isPending() && !t.getAccount().isHidden()
-                && t.getPairedTxnId() == null
+                // A payment to a linked loan pairs with the loan account but is still spending.
+                && (t.getPairedTxnId() == null || (c != null && c.getKind() == CategoryKind.EXPENSE))
                 && !(catchAll && TRANSFER.matcher(WordMatch.loosen(t.matchText())).find());
     }
 
@@ -233,7 +236,7 @@ public class RecurringService {
     }
 
     record Run(String payee, Cadence cadence, RecurringKind kind, long amount, Transaction last, LocalDate next,
-            boolean active, int count) {
+            LocalDate expected, boolean active, int count) {
     }
 
     private static Run run(String payee, List<Transaction> series, LocalDate today) {
@@ -266,12 +269,14 @@ public class RecurringService {
                 : c != null && c.hasRole(CategoryRole.SUBSCRIPTIONS) ? RecurringKind.SUBSCRIPTION : RecurringKind.OTHER;
         long amount = -last.getAmountCents();
         LocalDate next = cadence.after(last.getDay());
+        LocalDate expected = next;
         boolean active = !today.isAfter(next.plusDays(Math.max(5, gap / 2)));
         // Due and not through yet (or still pending): it's due now, not in the past.
         if (active && next.isBefore(today)) {
             next = today;
         }
-        return new Run(payee, cadence, kind, amount, last, active ? next : null, active, series.size());
+        return new Run(payee, cadence, kind, amount, last, active ? next : null, active ? expected : null, active,
+                series.size());
     }
 
     static Cadence cadence(long gap) {

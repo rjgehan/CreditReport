@@ -61,10 +61,11 @@ public class PaycheckService {
      * @param pattern words to match future deposits on; what "Track as paycheck" creates a rule from
      * @param tracked every deposit in the group is already categorised as Paycheck
      * @param accountHidden it lands in an account you hid, so it won't count as income until you show it
+     * @param firstOfMonth twice a month on the 1st and the 15th, rather than the 15th and the last day
      */
     public record Detected(String pattern, String example, String accountName, boolean accountHidden, String frequency,
             int count, long averageCents, long monthlyEstimateCents, LocalDate lastDate, LocalDate nextExpected,
-            boolean tracked) {
+            boolean tracked, boolean firstOfMonth) {
     }
 
     public record MonthPay(String month, long totalCents, int count) {
@@ -151,9 +152,13 @@ public class PaycheckService {
             }
             boolean tracked = similar.stream().allMatch(t -> t.getCategory() != null
                     && t.getCategory().hasRole(CategoryRole.PAYCHECK));
+            boolean firstOfMonth = frequency == PayFrequency.SEMIMONTHLY && firstAndFifteenth(similar);
+            // The payday after the last one: weekend-shifted deposits snap to the day they stood for.
+            LocalDate next = nextPayday(frequency == PayFrequency.SEMIMONTHLY ? nominal(last.getDay(), firstOfMonth)
+                    : last.getDay(), frequency, firstOfMonth);
             found.add(new Group(new Detected(e.getKey(), last.getDescription(), last.getAccount().getName(),
                     last.getAccount().isHidden(), frequency.name(), similar.size(), average,
-                    average * frequency.perYear() / 12, last.getDay(), next(last.getDay(), gap, frequency, similar), tracked),
+                    average * frequency.perYear() / 12, last.getDay(), next, tracked, firstOfMonth),
                     similar));
         }
         found.sort(Comparator.comparingLong((Group g) -> g.detected().monthlyEstimateCents()).reversed());
@@ -191,14 +196,45 @@ public class PaycheckService {
         return null;
     }
 
-    private static LocalDate next(LocalDate last, long gap, PayFrequency frequency, List<Transaction> deposits) {
-        if (frequency == PayFrequency.SEMIMONTHLY) {
-            return last.getDayOfMonth() <= 15 ? last.withDayOfMonth(last.lengthOfMonth()) : last.plusMonths(1).withDayOfMonth(15);
+    /**
+     * The payday after {@code day}. Twice a month means the 15th and the last day, or the
+     * 1st and the 15th; {@code day} is then one of those days (see {@link #nominal}).
+     */
+    static LocalDate nextPayday(LocalDate day, PayFrequency frequency, boolean firstOfMonth) {
+        return switch (frequency) {
+            case WEEKLY -> day.plusWeeks(1);
+            case BIWEEKLY -> day.plusWeeks(2);
+            case MONTHLY -> day.plusMonths(1);
+            case SEMIMONTHLY -> firstOfMonth
+                    ? (day.getDayOfMonth() < 15 ? day.withDayOfMonth(15) : day.plusMonths(1).withDayOfMonth(1))
+                    : (day.getDayOfMonth() < 15 ? day.withDayOfMonth(15)
+                            : day.getDayOfMonth() < day.lengthOfMonth() ? day.withDayOfMonth(day.lengthOfMonth())
+                            : day.plusMonths(1).withDayOfMonth(15));
+        };
+    }
+
+    /**
+     * The twice-a-month payday a deposit stood for: the nearest 1st/15th (or 15th/last day),
+     * so pay moved to Friday the 13th still counts as the 15th's, and Oct 30's as Nov 1's.
+     */
+    static LocalDate nominal(LocalDate deposit, boolean firstOfMonth) {
+        List<LocalDate> candidates = firstOfMonth
+                ? List.of(deposit.withDayOfMonth(1), deposit.withDayOfMonth(15), deposit.plusMonths(1).withDayOfMonth(1))
+                : List.of(deposit.minusMonths(1).withDayOfMonth(deposit.minusMonths(1).lengthOfMonth()),
+                        deposit.withDayOfMonth(15), deposit.withDayOfMonth(deposit.lengthOfMonth()));
+        return candidates.stream()
+                .min(Comparator.comparingLong(c -> Math.abs(ChronoUnit.DAYS.between(deposit, c)))).orElse(deposit);
+    }
+
+    /** Whether twice-a-month pay is on the 1st and 15th: its deposits sit closer to those days. */
+    static boolean firstAndFifteenth(List<Transaction> deposits) {
+        long first = 0;
+        long last = 0;
+        for (Transaction t : deposits) {
+            first += Math.abs(ChronoUnit.DAYS.between(t.getDay(), nominal(t.getDay(), true)));
+            last += Math.abs(ChronoUnit.DAYS.between(t.getDay(), nominal(t.getDay(), false)));
         }
-        if (frequency == PayFrequency.MONTHLY) {
-            return last.plusMonths(1);
-        }
-        return last.plusDays(frequency == PayFrequency.WEEKLY ? 7 : 14);
+        return first < last;
     }
 
     /**

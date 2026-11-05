@@ -593,7 +593,8 @@ label.row { cursor: pointer; }
 #view.masking { visibility: hidden; }
 /* Edit sheets prefill amounts; with amounts hidden they stay blurred until you
    tap into the field to change one. */
-body.private input[inputmode="decimal"]:not(:focus) { color: transparent; text-shadow: 0 0 9px var(--ink); }
+/* Only balance fields blur while balances are hidden; spending amounts show. */
+body.private input.secret:not(:focus) { color: transparent; text-shadow: 0 0 9px var(--ink); }
 .strip.two { grid-template-columns: 1fr 1fr; }
 .strip.two .value { font-size: 19px; }
 

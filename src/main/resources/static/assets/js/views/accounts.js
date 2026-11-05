@@ -261,7 +261,7 @@ export function editAccount(a, done, afterDelete) {
 
     if (a.manual && !invest) {
       // A balance: not filled in while balances are hidden; typing a new one still works.
-      const bal = h('input', { class: 'field', inputmode: 'decimal', placeholder: privacy.on ? 'Hidden. Type the new balance' : '',
+      const bal = h('input', { class: 'field secret', inputmode: 'decimal', placeholder: privacy.on ? 'Hidden. Type the new balance' : '',
         value: privacy.on ? '' : centsToInput(a.type === 'CREDIT_CARD' || a.type === 'LOAN' ? -a.balanceCents : a.balanceCents) });
       const go = h('button', { class: 'btn primary' }, 'Update balance');
       go.addEventListener('click', busy(go, async () => {
@@ -323,7 +323,7 @@ function importSheet(accounts, done) {
       const r = await upload('/api/import', form);
       clear(result).append(h('div', { class: 'banner info' }, '✅', h('div', null,
         `${r.imported} new, ${r.duplicates} already here (${r.format}).`,
-        r.balanceCents !== null && r.balanceCents !== undefined ? ` Balance set to ${money(r.balanceCents, { cents: true })}.` : '',
+        r.balanceCents !== null && r.balanceCents !== undefined ? ` Balance set to ${money(r.balanceCents, { cents: true, secret: true })}.` : '',
         r.problems.length ? h('div', { class: 'hint' }, r.problems.join(' · ')) : null)));
       done();
     }));

@@ -105,6 +105,22 @@ class ParsingTest {
     }
 
     @Test
+    void twiceAMonthPayKnowsWhichTwoDays() {
+        // 1st and 15th: Nov 1 fell on a Sunday, so it was paid Friday Oct 30.
+        assertThat(PaycheckService.nominal(LocalDate.of(2026, 10, 30), true)).isEqualTo(LocalDate.of(2026, 11, 1));
+        assertThat(PaycheckService.nextPayday(LocalDate.of(2026, 11, 1), cloud.gehan.finance.model.PayFrequency.SEMIMONTHLY, true))
+                .isEqualTo(LocalDate.of(2026, 11, 15));
+        assertThat(PaycheckService.nominal(LocalDate.of(2026, 11, 13), true)).isEqualTo(LocalDate.of(2026, 11, 15));
+        assertThat(PaycheckService.nextPayday(LocalDate.of(2026, 11, 15), cloud.gehan.finance.model.PayFrequency.SEMIMONTHLY, true))
+                .isEqualTo(LocalDate.of(2026, 12, 1));
+        // 15th and last day.
+        assertThat(PaycheckService.nextPayday(LocalDate.of(2026, 11, 15), cloud.gehan.finance.model.PayFrequency.SEMIMONTHLY, false))
+                .isEqualTo(LocalDate.of(2026, 11, 30));
+        assertThat(PaycheckService.nextPayday(LocalDate.of(2026, 11, 30), cloud.gehan.finance.model.PayFrequency.SEMIMONTHLY, false))
+                .isEqualTo(LocalDate.of(2026, 12, 15));
+    }
+
+    @Test
     void payRulesAreMoreThanOneStoreWord() {
         List<String> bofa = List.of("TARGET DES:PAYROLL ID:XXXXX12 INDN:DOE,JOHN CO ID:XXXXX34 PPD",
                 "TARGET DES:PAYROLL ID:XXXXX56 INDN:DOE,JOHN CO ID:XXXXX34 PPD");

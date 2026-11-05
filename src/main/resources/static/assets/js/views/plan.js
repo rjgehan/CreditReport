@@ -361,6 +361,10 @@ function goalRow(g) {
   if (g.type === 'SAVINGS_RATE') {
     nums = `${g.currentPercent === null ? '—' : g.currentPercent.toFixed(0) + '%'} / ${g.targetPercent}%`;
     foot = g.detail;
+  } else if (g.type === 'BALANCE' && privacy.on) {
+    // Its progress is an account balance, so only how far along while balances are hidden.
+    nums = pct(Math.min(g.fraction, 1));
+    foot = g.targetDate ? `${g.detail} · by ${shortDate(g.targetDate)}` : g.detail;
   } else {
     nums = `${money(g.currentCents)} / ${money(g.targetCents)}`;
     foot = g.neededPerMonthCents ? `${g.detail} · ${money(g.neededPerMonthCents)}/mo to hit it by ${shortDate(g.targetDate)}` : g.detail;

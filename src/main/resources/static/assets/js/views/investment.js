@@ -86,7 +86,7 @@ function cadenceText(p) {
 function positionSheet(a, x, done) {
   sheet(x ? x.symbol : 'Add a position', (body, s) => {
     const symbol = h('input', { class: 'field', value: x?.symbol || '', placeholder: 'Ticker, e.g. VTI', autocapitalize: 'characters', autocomplete: 'off' });
-    const count = h('input', { class: 'field', inputmode: 'decimal', value: x && !privacy.on ? String(x.shares) : '',
+    const count = h('input', { class: 'field secret', inputmode: 'decimal', value: x && !privacy.on ? String(x.shares) : '',
       placeholder: x && privacy.on ? 'Hidden. Type a new count' : 'Shares, e.g. 12.5' });
     const save = h('button', { class: 'btn primary' }, 'Save');
     save.addEventListener('click', busy(save, async () => {
@@ -106,7 +106,7 @@ function positionSheet(a, x, done) {
 
 function cashSheet(a, inv, done) {
   sheet('Cash', (body, s) => {
-    const cash = h('input', { class: 'field', inputmode: 'decimal', value: centsToInput(inv.cashCents), placeholder: '0.00' });
+    const cash = h('input', { class: 'field secret', inputmode: 'decimal', value: centsToInput(inv.cashCents), placeholder: '0.00' });
     const save = h('button', { class: 'btn primary' }, 'Save');
     save.addEventListener('click', busy(save, async () => {
       await put(`/api/investments/${a.id}/cash`, { cashCents: parseMoney(cash.value) || 0 });

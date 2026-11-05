@@ -12,19 +12,34 @@ const PARTS = [
   ['saving', 'Saving', 'var(--savings)'],
   ['free', 'Free to spend', 'var(--income)'],
 ];
-const VERDICT = { ok: ['good', 'On track'], tight: ['warn', 'A little tight'], short: ['warn', 'Covered by savings'] };
+const VERDICT = { ok: ['good', 'On track'], tight: ['warn', 'A little tight'], under: ['warn', 'Saving less this month'],
+  short: ['warn', 'Short this month'], unknown: ['', 'Pay not known yet'] };
 
 function parts(f) {
-  return { spent: f.spentCents, due: f.billsComingCents, saving: f.savingsTargetCents, free: Math.max(0, f.freeCents) };
+  // Saving is what fits this month: all of the target, or what's left when less is.
+  return { spent: f.spentCents, due: f.billsComingCents, saving: Math.max(0, Math.min(f.savingsTargetCents, f.roomCents)),
+    free: f.freeCents };
+}
+
+/** Short and covered by savings reads differently from short with nothing behind it. */
+function verdict(f) {
+  if (f.status === 'short' && f.savingsBalanceCents >= -f.roomCents) return ['warn', 'Covered by savings'];
+  return VERDICT[f.status];
 }
 
 /** The sentence under the number: what it means, in plain words. */
 function message(f) {
+  if (f.status === 'unknown') {
+    return `No pay is on record for this month yet. You've spent ${money(f.spentCents)} so far, with ${money(f.billsComingCents)} of bills still due.`;
+  }
   if (f.status === 'short') {
-    const gap = -f.freeCents;
+    const gap = -f.roomCents;
     return f.savingsBalanceCents >= gap
       ? `Bills and spending this month come to ${money(gap)} more than its pay. Your savings cover that, and next month starts fresh.`
-      : `Bills and spending this month come to ${money(gap)} more than its pay, more than your savings hold. Go easy until payday.`;
+      : `Bills and spending this month come to ${money(gap)} more than its pay. Go easy until the next payday.`;
+  }
+  if (f.status === 'under') {
+    return `After bills and what you've spent, ${money(f.roomCents)} is left this month, so that's what you'll save of your ${money(f.savingsTargetCents)} target. Nothing is overspent.`;
   }
   if (!f.history) {
     return `That's after ${money(f.billsComingCents)} of bills still due and saving ${money(f.savingsTargetCents)}.`;
@@ -56,7 +71,7 @@ function legend(f) {
 function figure(f) {
   return h('div', { class: 'month-figure' },
     h('span', { class: 'big' }, money(Math.max(0, f.freeCents)), h('span', { class: 'unit' }, ' free to spend')),
-    h('span', { class: 'pill ' + VERDICT[f.status][0] }, VERDICT[f.status][1]));
+    h('span', { class: 'pill ' + verdict(f)[0] }, verdict(f)[1]));
 }
 
 function perDay(f) {
@@ -111,7 +126,7 @@ export async function render() {
     'Nothing else due this month.'));
   root.append(...list('Spent so far',
     f.spentByCategory.map((s) => row(s.name, null, s.cents,
-      s.categoryId ? `#/activity?category=${s.categoryId}&month=${f.month}` : `#/activity?month=${f.month}`)),
+      s.rest ? `#/activity?month=${f.month}` : `#/activity?category=${s.categoryId ?? 'none'}&month=${f.month}`)),
     'Nothing yet.'));
   root.append(h('p', { class: 'hint', style: { margin: '0 4px' } },
     'Free to spend is this month\'s pay, minus what you\'ve spent, the bills still due and your savings target. One-offs aren\'t counted. ',

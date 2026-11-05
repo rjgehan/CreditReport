@@ -70,11 +70,12 @@ class ForecastTest {
             coming += c.get("cents").asLong();
         }
         assertThat(f.get("incomeCents").asLong()).isEqualTo(f.get("receivedCents").asLong() + coming);
-        assertThat(f.get("freeCents").asLong()).isEqualTo(f.get("incomeCents").asLong() - f.get("spentCents").asLong()
-                - f.get("billsComingCents").asLong() - 50000);
+        long room = f.get("incomeCents").asLong() - f.get("spentCents").asLong() - f.get("billsComingCents").asLong();
+        assertThat(f.get("roomCents").asLong()).isEqualTo(room);
+        assertThat(f.get("freeCents").asLong()).isEqualTo(Math.max(0, room - 50000));
         assertThat(f.get("oneOffCents").asLong()).isEqualTo(180000);
         assertThat(f.get("history").asBoolean()).isTrue();
-        assertThat(f.get("status").asText()).isIn("ok", "tight", "short");
+        assertThat(f.get("status").asText()).isIn("ok", "tight", "under", "short");
         assertThat(f.get("endCents").asLong()).isEqualTo(f.get("freeCents").asLong() - f.get("usualRestCents").asLong());
         // Twice-a-month pay: whatever paydays are left this month are on their way.
         for (JsonNode c : f.get("incomeComing")) {

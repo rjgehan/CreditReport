@@ -21,7 +21,7 @@ export async function render(params, app) {
 
   // With no income on record the month card can't say much, so help find the paycheck first.
   const setup = d.plan.incomeCents === 0 ? await incomeSetup(app) : null;
-  const left = h('div', { class: 'home-col' }, netWorth(d), setup, forecastCard(f), dueCards(d));
+  const left = h('div', { class: 'home-col' }, netWorth(d), setup, f.status === 'unknown' ? null : forecastCard(f), dueCards(d));
   const right = h('div', { class: 'home-col' }, targets(d), goals(d));
   return h('div', { class: 'grid two' }, left, right);
 }
@@ -101,7 +101,8 @@ function dueCards(d) {
   return h('section', { class: 'card flush' }, soon.map((c) =>
     h('a', { class: 'due-row', href: '#/accounts' },
       h('span', { class: 'text' }, `${c.institution ? c.institution + ' ' : ''}${c.name} due ${shortDate(c.dueDate)}`),
-      h('span', { class: 'amt' }, money(c.statementBalanceCents ?? -c.balanceCents)))));
+      // The statement's amount due is a bill; without one, it's the card's balance, which stays hidden.
+      h('span', { class: 'amt' }, money(c.statementBalanceCents ?? -c.balanceCents, { secret: c.statementBalanceCents == null })))));
 }
 
 // --- Spending targets -----------------------------------------------------------
@@ -140,6 +141,9 @@ function goals(d) {
     let value;
     if (g.type === 'SAVINGS_RATE') {
       value = `${g.currentPercent === null ? '—' : g.currentPercent.toFixed(0) + '%'} of ${g.targetPercent}%`;
+    } else if (g.type === 'BALANCE' && privacy.on) {
+      // A balance goal's progress is an account balance: only how far along, while balances are hidden.
+      value = pct(Math.min(g.fraction, 1));
     } else {
       value = `${money(g.currentCents)} of ${money(g.targetCents)}`;
     }

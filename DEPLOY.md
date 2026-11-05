@@ -64,6 +64,15 @@ On the iPhone, with Tailscale connected, open that address in Safari, sign in on
   on PCS, add a recurring contribution from your latest statement.
 - **Anything else:** download a QFX/OFX or CSV from the bank and use **Import statement**.
 
+## 5. Ask Claude (optional)
+
+The chat button at the top of every screen asks Claude about your money. Claude reads
+transactions and what the app works out from them; it never sees balances, net worth or
+investments, and it can't change anything. It needs an API key from console.anthropic.com
+(billed per question, separate from a Claude subscription): paste it on that screen, where it's
+stored encrypted like the bank token. Or set `ANTHROPIC_API_KEY` on the container instead. The
+server calls api.anthropic.com directly; nothing new is opened to the internet.
+
 ## Backups
 
 Everything lives in `/DATA/AppData/finance` (`finance.db` and the logo cache). Back up that

@@ -32,6 +32,12 @@ public class ApiErrors {
         return body(HttpStatus.BAD_REQUEST, message);
     }
 
+    /** Claude couldn't answer, or the key is missing or rejected: the message says which. */
+    @ExceptionHandler(cloud.gehan.finance.service.assistant.AssistantService.Problem.class)
+    ResponseEntity<Map<String, String>> assistant(RuntimeException e) {
+        return body(HttpStatus.BAD_GATEWAY, e.getMessage());
+    }
+
     @ExceptionHandler(NoSuchElementException.class)
     ResponseEntity<Map<String, String>> notFound(NoSuchElementException e) {
         return body(HttpStatus.NOT_FOUND, "Not found");

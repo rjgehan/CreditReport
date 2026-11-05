@@ -52,6 +52,8 @@ const ICONS = {
   calendar: 'M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM4 10h16M8 2v4M16 2v4',
   back: 'M15 6l-6 6 6 6',
   check: 'M5 12.5l4.5 4.5L19 7.5',
+  chat: 'M20 11.5a7.5 7.5 0 0 1-10.9 6.7L4 19.5l1.3-4.6A7.5 7.5 0 1 1 20 11.5z',
+  send: 'M12 19V5M6 11l6-6 6 6',
 };
 
 export function icon(name, size) {

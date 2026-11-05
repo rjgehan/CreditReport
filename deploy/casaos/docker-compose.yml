@@ -48,6 +48,10 @@ services:
       - APP_DEMO_DATA=false
       - APP_DATA_DIR=/data
       - TZ=America/New_York
+      # Optional, for connecting Claude (Accounts, More, Claude; DEPLOY.md section 5):
+      # where you open the app over Tailscale, and the public address Claude reaches.
+      # - APP_URL=https://<server-name>.<your-tailnet>.ts.net
+      # - APP_PUBLIC_URL=https://finance.<your-domain>
     volumes:
       - type: bind
         source: /DATA/AppData/finance

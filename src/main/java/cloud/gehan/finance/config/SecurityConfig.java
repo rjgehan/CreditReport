@@ -89,12 +89,17 @@ public class SecurityConfig {
                         .csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler())
                         // The shortcut authenticates with its own token, not a cookie, so
                         // there is no session to forge requests against.
-                        .ignoringRequestMatchers("/api/shortcut/answer"))
+                        .ignoringRequestMatchers("/api/shortcut/answer", "/mcp", "/oauth2/register", "/oauth2/token"))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/login.html", "/login", "/assets/**", "/icons/**",
                                 // The iPhone shortcut checks its own token on every request.
                                 "/api/shortcut/prompt", "/api/shortcut/answer",
+                                // So does Claude over MCP. Its sign-in: discovery, registration and
+                                // tokens are server to server; the consent page checks your sign-in itself.
+                                "/mcp", "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp",
+                                "/.well-known/oauth-authorization-server", "/.well-known/oauth-authorization-server/mcp",
+                                "/oauth2/register", "/oauth2/token", "/oauth2/authorize",
                                 "/manifest.webmanifest", "/favicon.ico", "/robots.txt",
                                 "/actuator/health", "/error"
                         ).permitAll()
@@ -137,7 +142,11 @@ public class SecurityConfig {
                                 "style-src 'self' 'unsafe-inline'",
                                 "img-src 'self' data:",
                                 "font-src 'self'",
-                                "form-action 'self'",
+                                // Allowing Claude on the consent screen sends you back to Claude's
+                                // sign-in page (or Claude Code's on your computer): the only places
+                                // a form here may lead, the same ones ClaudeOAuth accepts.
+                                "form-action 'self' https://claude.ai https://*.claude.ai https://claude.com"
+                                        + " https://*.claude.com http://localhost:* http://127.0.0.1:*",
                                 "frame-ancestors 'none'",
                                 "base-uri 'self'",
                                 "object-src 'none'")))

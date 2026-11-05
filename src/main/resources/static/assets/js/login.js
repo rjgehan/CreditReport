@@ -1,4 +1,5 @@
-// Posts the login form with the CSRF header and goes home on success.
+// Posts the login form with the CSRF header and goes home on success (or back to
+// Claude's connect screen, when that's what sent you here).
 
 const form = document.getElementById('login');
 const error = document.getElementById('error');
@@ -25,7 +26,8 @@ form.addEventListener('submit', async (e) => {
       credentials: 'same-origin',
     });
     if (res.ok) {
-      location.href = '/';
+      const next = new URLSearchParams(location.search).get('next') || '';
+      location.href = next.startsWith('/oauth2/authorize?') ? next : '/';
       return;
     }
     error.textContent = res.status === 429

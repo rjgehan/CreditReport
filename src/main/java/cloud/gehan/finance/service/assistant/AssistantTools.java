@@ -19,8 +19,6 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.anthropic.core.JsonValue;
-import com.anthropic.models.messages.Tool;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -43,7 +41,7 @@ import cloud.gehan.finance.service.TargetService;
 import jakarta.persistence.criteria.Predicate;
 
 /**
- * What the assistant can look at: transactions and everything worked out from
+ * What Claude can look at, over MCP: transactions and everything worked out from
  * them, read only. Nothing here returns a balance, net worth or an investment's
  * value; a goal that tracks a balance reports only how far along it is.
  */
@@ -82,7 +80,7 @@ public class AssistantTools {
         this.zone = props.zoneId();
     }
 
-    /** A tool call the assistant made that can't be answered as asked; its message goes back to it. */
+    /** A tool call that can't be answered as asked; its message goes back to Claude. */
     public static class BadInput extends RuntimeException {
         public BadInput(String message) {
             super(message);
@@ -91,8 +89,11 @@ public class AssistantTools {
 
     // --- Definitions --------------------------------------------------------------------
 
-    /** In a fixed order: the list is part of the cached prompt. */
-    public List<Tool> definitions() {
+    /** A tool as MCP lists it: its name, what it does, and a JSON Schema for its input. */
+    public record Definition(String name, String description, Map<String, Object> inputSchema) {
+    }
+
+    public List<Definition> definitions() {
         return List.of(
                 tool("find_transactions",
                         "Search transactions, newest first. Every filter is optional and they combine. Returns the "
@@ -147,14 +148,15 @@ public class AssistantTools {
                         props(), List.of()));
     }
 
-    private static Tool tool(String name, String description, Map<String, Object> properties, List<String> required) {
-        Tool.InputSchema.Properties.Builder p = Tool.InputSchema.Properties.builder();
-        properties.forEach((k, v) -> p.putAdditionalProperty(k, JsonValue.from(v)));
-        return Tool.builder()
-                .name(name)
-                .description(description)
-                .inputSchema(Tool.InputSchema.builder().properties(p.build()).required(required).build())
-                .build();
+    private static Definition tool(String name, String description, Map<String, Object> properties, List<String> required) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        if (!required.isEmpty()) {
+            schema.put("required", required);
+        }
+        schema.put("additionalProperties", false);
+        return new Definition(name, description, schema);
     }
 
     private static Map<String, Object> props(Object... pairs) {

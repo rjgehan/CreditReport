@@ -14,7 +14,9 @@ public record AppProperties(
         String encryptionKey,
         boolean demoData,
         String zone,
-        boolean secureCookies) {
+        boolean secureCookies,
+        String url,
+        String publicUrl) {
 
     public ZoneId zoneId() {
         return zone == null || zone.isBlank() ? ZoneId.systemDefault() : ZoneId.of(zone);

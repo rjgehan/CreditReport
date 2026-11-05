@@ -15,7 +15,7 @@ import * as bills from './views/bills.js';
 import * as recurring from './views/recurring.js';
 import * as forecast from './views/forecast.js';
 import * as categoriesView from './views/categories.js';
-import * as ask from './views/ask.js';
+import * as claude from './views/claude.js';
 
 // Tabs first; the rest are screens reached from a tab, with a back button to it.
 const ROUTES = [
@@ -34,7 +34,7 @@ const ROUTES = [
   { path: 'bills', title: 'Rent and loans', parent: 'accounts', view: bills },
   { path: 'investment', title: 'Investments', parent: 'accounts', view: investment },
   { path: 'shortcut', title: 'iPhone shortcut', parent: 'accounts', view: shortcut },
-  { path: 'ask', title: 'Ask Claude', parent: 'home', view: ask },
+  { path: 'claude', title: 'Claude', parent: 'accounts', view: claude },
 ];
 
 export const app = { me: null, rerender: () => {} };
@@ -44,13 +44,11 @@ const view = document.getElementById('view');
 const title = document.getElementById('title');
 const back = document.getElementById('back');
 const syncBtn = document.getElementById('sync');
-const askBtn = document.getElementById('ask');
 
 for (const r of ROUTES.filter((r) => r.icon)) {
   tabbar.append(h('a', { href: '#/' + r.path, dataset: { path: r.path } }, icon(r.icon), r.tab || r.title));
 }
 back.append(icon('back'));
-askBtn.append(icon('chat'));
 
 function parseHash() {
   const raw = location.hash.replace(/^#\/?/, '');
@@ -70,9 +68,6 @@ async function render() {
   // A screen opened from another sub-screen (Rent and loans from Monthly expenses) goes back there.
   const from = params.get('from');
   back.setAttribute('href', '#/' + (from && ROUTES.some((r) => r.path === from) ? from : route.parent || 'home'));
-  // Ask Claude from anywhere, and back to where you were.
-  askBtn.hidden = route.path === 'ask';
-  askBtn.setAttribute('href', '#/ask?from=' + route.path);
   const token = {};
   current = token;
   view.classList.add('loading');

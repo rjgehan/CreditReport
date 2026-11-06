@@ -89,7 +89,12 @@ public class InsightsController {
             for (InsightItem i : items.findByStateOrderByCreatedAtDesc(InsightItem.State.OPEN)) {
                 Transaction t = i.getTransactionId() == null ? null : txns.findById(i.getTransactionId()).orElse(null);
                 Category c = i.getCategoryId() == null ? null : categories.findById(i.getCategoryId()).orElse(null);
-                if ((i.getKind() == InsightItem.Kind.CHARGE && t == null) || (i.getKind() != InsightItem.Kind.CHARGE && c == null)) {
+                boolean aboutATransaction = i.getKind() == InsightItem.Kind.CHARGE || i.getKind() == InsightItem.Kind.ONE_OFF;
+                if (aboutATransaction ? t == null : c == null) {
+                    continue;
+                }
+                // Marked one-off by hand meanwhile: nothing left to ask.
+                if (i.getKind() == InsightItem.Kind.ONE_OFF && t.isOneOff()) {
                     continue;
                 }
                 open.add(new Item(i.getId(), i.getKind().name(), i.getReason(), i.getTransactionId(),

@@ -1,7 +1,8 @@
 // Claude's notes: the card on Home, and the page behind it with "Can I afford it?",
-// the week's recap, charges to check and the changes it suggests for you to approve.
+// the week's recap, charges to check and the changes it suggests for you to approve:
+// rules, targets, and once-in-a-while purchases to leave out of your monthly averages.
 
-import { get, post, put } from '../api.js';
+import { get, post, put, patch } from '../api.js';
 import { h, toast, busy } from '../ui.js';
 import { money, ago, shortDate } from '../fmt.js';
 
@@ -94,17 +95,21 @@ function suggestions(s, app) {
     h('div', { class: 'card-head', style: { padding: '16px 16px 0' } }, h('h2', null, 'Suggestions')),
     list.map((i) => {
       const what = i.kind === 'RULE' ? `File "${i.pattern}" as ${i.categoryName}`
-        : `${i.categoryName}: ${money(i.limitCents)} a month`;
-      const apply = h('button', { class: 'btn small primary' }, i.kind === 'RULE' ? 'Add rule' : 'Set target');
+        : i.kind === 'ONE_OFF' ? `One-time: ${i.description}`
+          : `${i.categoryName}: ${money(i.limitCents)} a month`;
+      const meta = i.kind === 'ONE_OFF' ? `${shortDate(i.day)} · ${money(-i.amountCents)} · ${i.reason}` : i.reason;
+      const label = { RULE: 'Add rule', TARGET: 'Set target', ONE_OFF: 'Leave out' }[i.kind];
+      const apply = h('button', { class: 'btn small primary' }, label);
       apply.addEventListener('click', busy(apply, async () => {
         if (i.kind === 'RULE') await post('/api/rules', { pattern: i.pattern, categoryId: i.categoryId });
+        else if (i.kind === 'ONE_OFF') await patch(`/api/transactions/${i.transactionId}`, { oneOff: true });
         else await put(`/api/targets/${i.categoryId}`, { monthlyLimitCents: i.limitCents });
         await post(`/api/insights/items/${i.id}/done`);
-        toast(i.kind === 'RULE' ? 'Rule added' : 'Target set');
+        toast({ RULE: 'Rule added', TARGET: 'Target set', ONE_OFF: 'Left out of your averages' }[i.kind]);
         app.rerender();
       }));
       return h('div', { class: 'row' },
-        h('div', { class: 'main' }, h('div', { class: 'title' }, what), h('div', { class: 'meta' }, i.reason)),
+        h('div', { class: 'main' }, h('div', { class: 'title' }, what), h('div', { class: 'meta' }, meta)),
         h('div', { class: 'btn-row', style: { flexWrap: 'nowrap' } }, apply, close(i, 'dismissed', 'Skip', app)));
     }));
 }

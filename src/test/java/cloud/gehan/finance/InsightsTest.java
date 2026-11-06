@@ -67,10 +67,17 @@ class InsightsTest {
                             }
                         }
                         long recent = data.at("/recent_transactions/transactions/0/id").asLong();
+                        long bed = -1;
+                        for (JsonNode t : data.at("/spending_history/transactions")) {
+                            if (t.get("description").asText().contains("MATTRESS")) {
+                                bed = t.get("id").asLong();
+                            }
+                        }
                         answer = "{\"status\":\"watch\",\"headline\":\"Watch: bars are up.\",\"notes\":[\"Bars $90, about double usual.\"],"
                                 + "\"odd_charges\":[{\"transaction_id\":" + recent + ",\"reason\":\"Charged twice\"}],"
                                 + "\"file\":[{\"transaction_id\":" + leftover + ",\"category\":\"Groceries\"}],"
                                 + "\"rules\":[{\"pattern\":\"corner deli\",\"category\":\"Groceries\",\"reason\":\"Shows up weekly\"}],"
+                                + "\"one_offs\":[{\"transaction_id\":" + bed + ",\"reason\":\"A mattress, bought every few years\"}],"
                                 + "\"week_recap\":[\"A quiet week.\"]}";
                     } else if (input.contains("Write the review")) {
                         answer = "{\"review\":[\"Spending was steady.\"],\"targets\":[{\"category\":\"Groceries\",\"monthly_limit\":400,\"reason\":\"You spend about $380\"}]}";
@@ -107,6 +114,14 @@ class InsightsTest {
                 "{\"reviewed\":false}");
         call(post("/api/transactions"), String.format(
                 "{\"accountId\":%d,\"day\":\"%s\",\"amountCents\":-9000,\"description\":\"THE BAR\"}", checking, old));
+        long mattress = call(post("/api/transactions"), String.format(
+                "{\"accountId\":%d,\"day\":\"%s\",\"amountCents\":-120000,\"description\":\"MATTRESS FIRM\"}", checking, old))
+                .get("id").asLong();
+        // Filed as shopping, so it counts in the averages until it's left out.
+        long shopping = call(get("/api/categories"), null).findParents("name").stream()
+                .filter(c -> c.get("name").asText().equals("Shopping")).findFirst().orElseThrow().get("id").asLong();
+        call(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/api/transactions/" + mattress),
+                "{\"categoryId\":" + shopping + "}");
 
         assertThat(call(get("/api/insights"), null).get("configured").asBoolean()).isFalse();
         call(put("/api/insights/token"), "{\"token\":\"sk-ant-oat01-test\"}");
@@ -116,7 +131,23 @@ class InsightsTest {
         assertThat(s.at("/take/headline").asText()).isEqualTo("Watch: bars are up.");
         assertThat(s.at("/take/lines/0").asText()).contains("Bars $90");
         List<String> kinds = MAPPER.convertValue(s.get("items").findValuesAsText("kind"), List.class);
-        assertThat(kinds).contains("CHARGE", "RULE", "TARGET");
+        assertThat(kinds).contains("CHARGE", "RULE", "TARGET", "ONE_OFF");
+
+        // Leaving the mattress out: it's then marked one-off and the suggestion goes away.
+        JsonNode bedItem = null;
+        for (JsonNode i : s.get("items")) {
+            if (i.get("kind").asText().equals("ONE_OFF")) {
+                bedItem = i;
+            }
+        }
+        assertThat(bedItem.get("transactionId").asLong()).isEqualTo(mattress);
+        assertThat(bedItem.get("reason").asText()).contains("mattress");
+        call(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/api/transactions/" + mattress),
+                "{\"oneOff\":true}");
+        assertThat(call(get("/api/insights"), null).get("items").findValuesAsText("kind")).doesNotContain("ONE_OFF");
+        // Asked again tomorrow, the same purchase isn't suggested twice.
+        call(post("/api/insights/refresh"), null);
+        assertThat(call(get("/api/insights"), null).get("items").findValuesAsText("kind")).doesNotContain("ONE_OFF");
         assertThat(s.toString()).contains("CORNER DELI").contains("Shows up weekly");
 
         // The leftover was filed, as Claude's pick.
@@ -141,9 +172,10 @@ class InsightsTest {
         assertThat(a.get("answer").asText()).isEqualTo("yes");
 
         // Approving and dismissing take items off the list.
-        long id = s.at("/items/0/id").asLong();
+        JsonNode open = call(get("/api/insights"), null);
+        long id = open.at("/items/0/id").asLong();
         JsonNode after = call(post("/api/insights/items/" + id + "/dismissed"), null);
-        assertThat(after.get("items").size()).isEqualTo(s.get("items").size() - 1);
+        assertThat(after.get("items").size()).isEqualTo(open.get("items").size() - 1);
     }
 
     private JsonNode call(MockHttpServletRequestBuilder request, String body) throws Exception {

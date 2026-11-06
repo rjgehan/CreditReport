@@ -42,7 +42,8 @@ import cloud.gehan.finance.service.assistant.AssistantTools;
 
 /**
  * What Claude does with your money each day: a short take for Home, charges worth a
- * second look, the leftovers your rules missed, and rules to suggest. Sundays add a
+ * second look, the leftovers your rules missed, rules to suggest, and once-in-a-while
+ * purchases (a mattress, a couch) to leave out of your monthly averages if you agree. Sundays add a
  * recap of the week; the start of a month adds a review of the last one and target
  * suggestions. "Can I afford it?" asks on demand.
  *
@@ -56,6 +57,8 @@ public class Insights {
 
     private static final Logger log = LoggerFactory.getLogger(Insights.class);
     static final int RECENT_DAYS = 45;
+    /** How far back Claude looks for purchases that aren't part of a normal month. */
+    static final int ONE_OFF_MONTHS = 6;
 
     static final String SYSTEM = """
             You are Claude, inside Finance, a personal finance app one person runs for themselves. You look over \
@@ -157,6 +160,12 @@ public class Insights {
         data.put("categories", tx.execute(s -> leftovers.choices().stream().map(Category::getName).toList()));
         data.put("flagged_before", items.findByKind(InsightItem.Kind.CHARGE).stream()
                 .map(InsightItem::getTransactionId).toList());
+        // Every purchase of the last months, so a one-time buy can be told from a habit (and the
+        // purchases from before this feature are looked at too).
+        data.put("spending_history", look("find_transactions", "{\"kind\":\"spending\",\"from\":\""
+                + today.minusMonths(ONE_OFF_MONTHS) + "\",\"limit\":200}"));
+        data.put("one_off_suggested_before", items.findByKind(InsightItem.Kind.ONE_OFF).stream()
+                .map(InsightItem::getTransactionId).toList());
 
         String ask = "Today is " + spoken(today) + ".\n\nWrite today's notes:\n"
                 + "- status: on_track, watch or over, from this_month (its status and free_to_spend) and how "
@@ -174,6 +183,13 @@ public class Insights {
                 + "- rules: up to 3 rules worth adding, for merchants that keep landing uncategorized or in the wrong "
                 + "category: pattern is a few words from the description that will match the next ones, category "
                 + "exactly as written in categories. Usually empty.\n"
+                + "- one_offs: purchases in spending_history that aren't part of a normal month and would distort "
+                + "their monthly average: things bought once in years (a mattress, a couch, a desk, a laptop, an "
+                + "appliance, the big furniture run after a move). Judge from the store, the amount against what they "
+                + "usually spend there and in that category, and whether they buy there regularly; there is no fixed "
+                + "minimum. Never rent, bills, loans, subscriptions, groceries, dining or anything they buy most "
+                + "months. Leave out rows already marked oneOff and ids in one_off_suggested_before. Ids from "
+                + "spending_history; reason is a few words, e.g. \"A mattress, bought every few years\". Usually empty.\n"
                 + (recap ? "- week_recap: it's Sunday. Up to 3 short lines on this week (since " + shortDay(weekStart)
                         + "): what was up or down against usual, and one thing to watch.\n" : "")
                 + "\nData:\n" + write(data);
@@ -188,7 +204,10 @@ public class Insights {
                 "category", Map.of("type", "string")), List.of("transaction_id", "category")));
         props.put("rules", array(Map.of("pattern", Map.of("type", "string"), "category", Map.of("type", "string"),
                 "reason", Map.of("type", "string")), List.of("pattern", "category", "reason")));
-        List<String> required = new ArrayList<>(List.of("status", "headline", "notes", "odd_charges", "file", "rules"));
+        props.put("one_offs", array(Map.of("transaction_id", Map.of("type", "integer"),
+                "reason", Map.of("type", "string")), List.of("transaction_id", "reason")));
+        List<String> required = new ArrayList<>(List.of("status", "headline", "notes", "odd_charges", "file", "rules",
+                "one_offs"));
         if (recap) {
             props.put("week_recap", Map.of("type", "array", "items", Map.of("type", "string"), "maxItems", 3));
             required.add("week_recap");
@@ -210,6 +229,7 @@ public class Insights {
             }
             flag(a.path("odd_charges"));
             suggestRules(a.path("rules"));
+            suggestOneOffs(a.path("one_offs"));
         });
         file(a.path("file"));
     }
@@ -320,6 +340,26 @@ public class Insights {
             Optional<Transaction> t = txns.findById(id).filter(x -> !x.getAccount().isHidden());
             if (t.isPresent() && known.add(id) && added++ < 5) {
                 InsightItem i = new InsightItem(InsightItem.Kind.CHARGE, clip(c.path("reason").asText(""), 500));
+                i.setTransactionId(id);
+                items.save(i);
+            }
+        }
+    }
+
+    /**
+     * Only real purchases that still count toward the averages, and never rent, loans or other fixed
+     * costs: those are monthly by nature. Each purchase is suggested once; skipping it is final.
+     */
+    private void suggestOneOffs(JsonNode suggested) {
+        Set<Long> known = new HashSet<>();
+        items.findByKind(InsightItem.Kind.ONE_OFF).forEach(i -> known.add(i.getTransactionId()));
+        for (JsonNode o : suggested) {
+            long id = o.path("transaction_id").asLong(-1);
+            Optional<Transaction> t = txns.findById(id).filter(x -> !x.getAccount().isHidden() && x.getAmountCents() < 0
+                    && !x.isOneOff() && x.getCategory() != null && x.getCategory().getKind() == CategoryKind.EXPENSE
+                    && !x.getCategory().isFixedCost());
+            if (t.isPresent() && known.add(id)) {
+                InsightItem i = new InsightItem(InsightItem.Kind.ONE_OFF, clip(o.path("reason").asText(""), 500));
                 i.setTransactionId(id);
                 items.save(i);
             }

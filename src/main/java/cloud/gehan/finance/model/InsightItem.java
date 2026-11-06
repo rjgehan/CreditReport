@@ -9,12 +9,15 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
-/** A charge Claude thinks you should look at, or a change it suggests (a rule, a target) for you to approve. */
+/**
+ * A charge Claude thinks you should look at, or a change it suggests for you to approve: a rule, a target, or a
+ * purchase to leave out of your monthly averages because it's a once-in-a-while thing (a mattress, a couch).
+ */
 @Entity
 @Table(name = "insight_item")
 public class InsightItem {
 
-    public enum Kind { CHARGE, RULE, TARGET }
+    public enum Kind { CHARGE, RULE, TARGET, ONE_OFF }
 
     public enum State { OPEN, DONE, DISMISSED }
 
@@ -28,7 +31,7 @@ public class InsightItem {
     @Column(nullable = false)
     private State state = State.OPEN;
 
-    /** CHARGE: the transaction. */
+    /** CHARGE and ONE_OFF: the transaction. */
     private Long transactionId;
 
     /** RULE: the words to match. */

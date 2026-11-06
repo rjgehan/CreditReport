@@ -37,8 +37,11 @@ async function targets(root, refresh) {
   const card = h('section', { class: 'card flush' });
   const list = h('div', { class: 'list' });
   for (const s of progress.spending) {
-    const row = targetRow(s);
-    row.addEventListener('click', (e) => { e.preventDefault(); targetSheet(cats, s, refresh); });
+    // Tapping a target shows its transactions this month; Edit changes the limit.
+    const row = targetRow(s, `#/activity?category=${s.categoryId}&month=${thisMonth()}&from=targets`);
+    row.querySelector('.top').append(h('button', { class: 'link', type: 'button', onclick: (e) => {
+      e.preventDefault(); e.stopPropagation(); targetSheet(cats, s, refresh);
+    } }, 'Edit'));
     list.append(row);
   }
   if (!progress.spending.length) list.append(h('div', { class: 'empty' }, 'No targets yet. A monthly cap per category shows how you\'re pacing.'));
@@ -343,11 +346,11 @@ function ruleSheet(cats, refresh) {
 
 // --- Rows (the detailed versions; Home shows compact ones) -------------------------
 
-function targetRow(s) {
+function targetRow(s, href = `#/activity?category=${s.categoryId}`) {
   const badge = s.status === 'over' ? h('span', { class: 'pill bad' }, 'Over')
     : s.status === 'watch' ? h('span', { class: 'pill warn' }, 'Watch') : null;
   const left = s.limitCents - s.spentCents;
-  return h('a', { class: 'meter-row tap', style: { display: 'block' }, href: `#/activity?category=${s.categoryId}` },
+  return h('a', { class: 'meter-row tap', style: { display: 'block' }, href },
     h('div', { class: 'top' }, h('span', { class: 'name' }, s.name), badge,
       h('span', { class: 'nums' }, `${money(s.spentCents)} / ${money(s.limitCents)}`)),
     meter(s.fraction, s.status, s.expectedFraction),

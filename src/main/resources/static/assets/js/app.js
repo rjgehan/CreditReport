@@ -66,10 +66,12 @@ async function render() {
   document.title = route.title === 'Home' ? 'Finance' : `${route.title} · Finance`;
   const tab = route.parent || route.path;
   tabbar.querySelectorAll('a').forEach((a) => a.classList.toggle('active', a.dataset.path === tab));
-  back.hidden = !route.parent;
-  // A screen opened from another sub-screen (Rent and loans from Monthly expenses) goes back there.
+  // A screen opened from another one (Rent and loans from Monthly expenses, a target's
+  // transactions from Spending targets) goes back there, even a tab.
   const from = params.get('from');
-  back.setAttribute('href', '#/' + (from && ROUTES.some((r) => r.path === from) ? from : route.parent || 'home'));
+  const fromKnown = from && ROUTES.some((r) => r.path === from);
+  back.hidden = !route.parent && !fromKnown;
+  back.setAttribute('href', '#/' + (fromKnown ? from : route.parent || 'home'));
   const token = {};
   current = token;
   view.classList.add('loading');

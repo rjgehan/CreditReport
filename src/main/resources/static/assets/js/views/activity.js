@@ -112,6 +112,9 @@ export async function render(params, app) {
   const syncHash = () => {
     const p = new URLSearchParams();
     for (const [k, v] of Object.entries(state)) if (v) p.set(k, v);
+    // Keep where it was opened from, so the back button still goes there.
+    const from = new URLSearchParams(location.hash.split('?')[1] || '').get('from');
+    if (from) p.set('from', from);
     history.replaceState(null, '', '#/activity' + (p.toString() ? '?' + p : ''));
   };
   let timer;

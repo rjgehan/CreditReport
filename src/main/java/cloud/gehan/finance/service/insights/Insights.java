@@ -45,7 +45,7 @@ import cloud.gehan.finance.service.assistant.AssistantTools;
  * second look, the leftovers your rules missed, rules to suggest, and once-in-a-while
  * purchases (a mattress, a couch) to leave out of your monthly averages if you agree. Sundays add a
  * recap of the week; the start of a month adds a review of the last one and target
- * suggestions. "Can I afford it?" asks on demand.
+ * suggestions. Questions you type go through {@link Ask}.
  *
  * <p>Claude sees what {@link AssistantTools} returns: transactions and what's worked
  * out from them, never a balance. Anything that changes your setup (a rule, a
@@ -60,11 +60,14 @@ public class Insights {
     /** How far back Claude looks for purchases that aren't part of a normal month. */
     static final int ONE_OFF_MONTHS = 6;
 
+    /** Also what {@link Ask} starts from. */
     static final String SYSTEM = """
             You are Claude, inside Finance, a personal finance app one person runs for themselves. You look over \
             their money and write short, useful notes for the app. They read them on an iPhone at a glance.
 
-            By design you never see account balances, net worth or what investments are worth; don't guess them.
+            By design you never see account balances, net worth or what investments are worth; don't guess them. \
+            For the same reason, rows on savings, brokerage and retirement accounts and interest aren't shared: money \
+            moved into savings shows from the checking side. Don't read their absence as nothing happening there.
 
             How the data works: amounts are US dollars; in transactions negative is money out. Pay arrives after \
             taxes and 401(k), so income is take-home. Credit card payments and moves between their own accounts are \
@@ -84,6 +87,7 @@ public class Insights {
     private final CategoryRepository categories;
     private final CategoryRuleRepository rules;
     private final TransactionRepository txns;
+    private final cloud.gehan.finance.service.Freshness freshness;
     private final TransactionTemplate tx;
     private final ObjectMapper json;
     private final ZoneId zone;
@@ -93,7 +97,8 @@ public class Insights {
 
     public Insights(ClaudeCode claude, AssistantTools tools, ShortcutCategorizer leftovers, InsightRepository insights,
             InsightItemRepository items, CategoryRepository categories, CategoryRuleRepository rules,
-            TransactionRepository txns, TransactionTemplate tx, ObjectMapper json, AppProperties props) {
+            TransactionRepository txns, cloud.gehan.finance.service.Freshness freshness, TransactionTemplate tx,
+            ObjectMapper json, AppProperties props) {
         this.claude = claude;
         this.tools = tools;
         this.leftovers = leftovers;
@@ -102,6 +107,7 @@ public class Insights {
         this.categories = categories;
         this.rules = rules;
         this.txns = txns;
+        this.freshness = freshness;
         this.tx = tx;
         this.json = json;
         this.zone = props.zoneId();
@@ -129,7 +135,11 @@ public class Insights {
         try {
             daily();
             YearMonth last = YearMonth.now(zone).minusMonths(1);
-            if (insights.findByKindAndPeriod(Insight.Kind.MONTH, last.toString()).isEmpty()) {
+            // Written once, so only once every spending account has data past the month's end;
+            // a card that stopped updating on the 28th would make the month look lighter for good.
+            LocalDate monthOver = last.plusMonths(1).atDay(1);
+            boolean complete = freshness.behind().stream().noneMatch(b -> b.since().isBefore(monthOver));
+            if (complete && insights.findByKindAndPeriod(Insight.Kind.MONTH, last.toString()).isEmpty()) {
                 monthly(last);
             }
             lastError = null;
@@ -158,22 +168,27 @@ public class Insights {
                 "{\"from\":\"" + today.minusDays(RECENT_DAYS) + "\",\"limit\":200}"));
         data.put("to_file", toFile());
         data.put("categories", tx.execute(s -> leftovers.choices().stream().map(Category::getName).toList()));
+        // Names and dates only: a bank that stopped updating makes the month look lighter than it is.
+        data.put("accounts_behind", accountsBehind());
         data.put("flagged_before", items.findByKind(InsightItem.Kind.CHARGE).stream()
                 .map(InsightItem::getTransactionId).toList());
         // Every purchase of the last months, so a one-time buy can be told from a habit (and the
         // purchases from before this feature are looked at too).
-        data.put("spending_history", look("find_transactions", "{\"kind\":\"spending\",\"from\":\""
-                + today.minusMonths(ONE_OFF_MONTHS) + "\",\"limit\":200}"));
+        data.put("spending_history", posted(look("find_transactions", "{\"kind\":\"spending\",\"from\":\""
+                + today.minusMonths(ONE_OFF_MONTHS) + "\",\"limit\":200}")));
         data.put("one_off_suggested_before", items.findByKind(InsightItem.Kind.ONE_OFF).stream()
                 .map(InsightItem::getTransactionId).toList());
 
         String ask = "Today is " + spoken(today) + ".\n\nWrite today's notes:\n"
                 + "- status: on_track, watch or over, from this_month (its status and free_to_spend) and how "
                 + "spending compares with their usual months.\n"
-                + "- headline: one short sentence with the main thing, e.g. \"On track: $420 free for the rest of "
-                + "November.\"\n"
+                + "- headline: one short sentence with the main thing, e.g. \"On track, and dining is back to "
+                + "normal.\" Don't quote free_to_spend or other this_month totals: the app shows them live right "
+                + "under your note.\n"
                 + "- notes: up to 3 short lines on what stands out, with numbers: a category well above usual (beer "
-                + "and bars, say), a big one-off, a bill still due. Leave out anything unremarkable.\n"
+                + "and bars, say), a big one-off, a bill still due. Leave out anything unremarkable. If accounts_behind "
+                + "isn't empty, those accounts haven't updated, so recent spending is missing: say so in one note, and "
+                + "don't read low spending as on track.\n"
                 + "- odd_charges: recent transactions worth a second look: the same charge twice, a subscription or "
                 + "bill that went up, a free trial that turned paid, a charge much bigger than usual for that "
                 + "merchant. Use ids from recent_transactions and leave out ids in flagged_before. Usually empty.\n"
@@ -223,7 +238,8 @@ public class Insights {
             take.setCreatedAt(Instant.now());
             insights.save(take);
             if (recap && a.has("week_recap")) {
-                Insight w = new Insight(Insight.Kind.WEEK, weekStart.toString());
+                Insight w = insights.findByKindAndPeriod(Insight.Kind.WEEK, weekStart.toString())
+                        .orElseGet(() -> new Insight(Insight.Kind.WEEK, weekStart.toString()));
                 w.setBody(clip(lines(a.path("week_recap")), 4000));
                 insights.save(w);
             }
@@ -276,38 +292,11 @@ public class Insights {
         });
     }
 
-    // --- Can I afford it? ---------------------------------------------------------------
-
-    public record Answer(String answer, String text) {
-    }
-
-    public Answer afford(String question) {
-        LocalDate today = LocalDate.now(zone);
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("today", today.toString());
-        data.put("this_month", look("this_month", "{}"));
-        data.put("months", look("monthly_summary", "{\"from_month\":\"" + YearMonth.from(today).minusMonths(2)
-                + "\",\"to_month\":\"" + YearMonth.from(today) + "\"}"));
-        data.put("targets_and_goals", look("spending_targets_and_goals", "{}"));
-        data.put("monthly_expenses", look("monthly_expenses", "{}"));
-        data.put("recent_transactions", look("find_transactions", "{\"from\":\"" + today.minusDays(30) + "\",\"limit\":100}"));
-        String ask = "Today is " + spoken(today) + ". They ask: \"" + question.replace("\"", "'") + "\"\n\n"
-                + "Answer from this_month: what's free to spend after bills and their savings target (free_to_spend, "
-                + "free_per_day, free_per_week), what's still due, and what they usually spend from here to the end of "
-                + "the month. answer is yes, careful or no. text is 1 to 3 short sentences with the numbers that "
-                + "decide it. If it isn't about spending money, answer careful and say what you can help with.\n"
-                + "\nData:\n" + write(data);
-        Map<String, Object> props = new LinkedHashMap<>();
-        props.put("answer", Map.of("type", "string", "enum", List.of("yes", "careful", "no")));
-        props.put("text", Map.of("type", "string"));
-        JsonNode a = claude.ask(SYSTEM, ask, object(props, List.of("answer", "text")));
-        return new Answer(a.path("answer").asText("careful"), a.path("text").asText(""));
-    }
-
     // --- Applying answers ---------------------------------------------------------------
 
     private List<Map<String, Object>> toFile() {
-        return tx.execute(s -> leftovers.leftovers().stream().map(t -> {
+        return tx.execute(s -> leftovers.leftovers().stream()
+                .filter(t -> !AssistantTools.KEPT_ACCOUNTS.contains(t.getAccount().getType())).map(t -> {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id", t.getId());
             m.put("date", t.getDay().toString());
@@ -337,7 +326,8 @@ public class Insights {
         int added = 0;
         for (JsonNode c : charges) {
             long id = c.path("transaction_id").asLong(-1);
-            Optional<Transaction> t = txns.findById(id).filter(x -> !x.getAccount().isHidden());
+            // Only once it has posted: a pending row is replaced by a new one (new id) when it does.
+            Optional<Transaction> t = txns.findById(id).filter(x -> !x.getAccount().isHidden() && !x.isPending());
             if (t.isPresent() && known.add(id) && added++ < 5) {
                 InsightItem i = new InsightItem(InsightItem.Kind.CHARGE, clip(c.path("reason").asText(""), 500));
                 i.setTransactionId(id);
@@ -355,8 +345,8 @@ public class Insights {
         items.findByKind(InsightItem.Kind.ONE_OFF).forEach(i -> known.add(i.getTransactionId()));
         for (JsonNode o : suggested) {
             long id = o.path("transaction_id").asLong(-1);
-            Optional<Transaction> t = txns.findById(id).filter(x -> !x.getAccount().isHidden() && x.getAmountCents() < 0
-                    && !x.isOneOff() && x.getCategory() != null && x.getCategory().getKind() == CategoryKind.EXPENSE
+            Optional<Transaction> t = txns.findById(id).filter(x -> !x.getAccount().isHidden() && !x.isPending()
+                    && x.getAmountCents() < 0 && !x.isOneOff() && x.getCategory() != null && x.getCategory().getKind() == CategoryKind.EXPENSE
                     && !x.getCategory().isFixedCost());
             if (t.isPresent() && known.add(id)) {
                 InsightItem i = new InsightItem(InsightItem.Kind.ONE_OFF, clip(o.path("reason").asText(""), 500));
@@ -384,7 +374,28 @@ public class Insights {
 
     // --- Helpers ------------------------------------------------------------------------
 
-    private JsonNode look(String tool, String input) {
+    /** Names and dates only: a bank that stopped updating makes the month look lighter than it is. */
+    List<Map<String, String>> accountsBehind() {
+        return freshness.behind().stream().map(b -> Map.of("account", b.account().getName(),
+                "nothing_new_since", b.since().toString())).toList();
+    }
+
+    /** The lookup without pending rows: Claude judges a purchase once it has posted under its final id. */
+    private static JsonNode posted(JsonNode found) {
+        JsonNode rows = found.path("transactions");
+        if (rows.isArray()) {
+            com.fasterxml.jackson.databind.node.ArrayNode keep = ((com.fasterxml.jackson.databind.node.ObjectNode) found)
+                    .putArray("transactions");
+            for (JsonNode r : rows) {
+                if (!r.path("pending").asBoolean(false)) {
+                    keep.add(r);
+                }
+            }
+        }
+        return found;
+    }
+
+    JsonNode look(String tool, String input) {
         try {
             return json.readTree(tools.run(tool, json.readTree(input)));
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
@@ -392,7 +403,7 @@ public class Insights {
         }
     }
 
-    private String write(Object o) {
+    String write(Object o) {
         try {
             return json.writeValueAsString(o);
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
@@ -400,7 +411,7 @@ public class Insights {
         }
     }
 
-    private static Map<String, Object> object(Map<String, Object> props, List<String> required) {
+    static Map<String, Object> object(Map<String, Object> props, List<String> required) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("type", "object");
         m.put("properties", props);

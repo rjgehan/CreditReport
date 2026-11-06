@@ -1,5 +1,6 @@
 package cloud.gehan.finance.provider;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -24,6 +25,7 @@ public record FetchResult(
         boolean pendingAuthoritative,
         List<String> warnings) {
 
+    /** @param balanceDate when the bank last had fresh data for it (SimpleFIN's balance-date), or null */
     public record AccountData(
             String externalId,
             String name,
@@ -33,7 +35,8 @@ public record FetchResult(
             long balanceCents,
             Long availableCents,
             Long creditLimitCents,
-            String currency) {
+            String currency,
+            Instant balanceDate) {
     }
 
     public record TxnData(

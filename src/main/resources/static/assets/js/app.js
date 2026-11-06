@@ -48,7 +48,15 @@ const back = document.getElementById('back');
 const syncBtn = document.getElementById('sync');
 
 for (const r of ROUTES.filter((r) => r.icon)) {
-  tabbar.append(h('a', { href: '#/' + r.path, dataset: { path: r.path } }, icon(r.icon), r.tab || r.title));
+  // Tapping the tab you're on refreshes it and goes back to the top, as iOS apps do.
+  const onTab = (e) => {
+    const here = location.hash === '#/' + r.path || (r.path === 'home' && (location.hash === '' || location.hash === '#/'));
+    if (!here) return;
+    e.preventDefault();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    render({ quiet: true });
+  };
+  tabbar.append(h('a', { href: '#/' + r.path, dataset: { path: r.path }, onclick: onTab }, icon(r.icon), r.tab || r.title));
 }
 back.append(icon('back'));
 
@@ -58,8 +66,78 @@ function parseHash() {
   return { path: path || 'home', params: new URLSearchParams(query) };
 }
 
+// --- Coming back to the app ---------------------------------------------------------
+//
+// iOS resumes a home-screen app as it was, so the morning's numbers could sit there all
+// evening. After a minute away the screen quietly re-renders. And first, one request on
+// its own: if the session lapsed (an update restarted the server, a long gap), remember-me
+// signs back in on that request. Done by a screen's several requests at once, Spring reads
+// the rotating cookie as stolen and signs every device out.
+
+const AWAY_MS = 60 * 1000;
+let bootId = null;
+let lastSeen = Date.now();
+let sessionCheck = null;
+
+function ensureSession() {
+  if (!sessionCheck) {
+    const check = get('/api/me').then((me) => {
+      // The boot request failed (no signal at launch): this is the version the screens came with.
+      if (!bootId) bootId = me.startedAt;
+      // The server restarted with a new version: load its screens rather than run the old ones.
+      if (bootId && me.startedAt && me.startedAt !== bootId) {
+        location.reload();
+        return new Promise(() => {});
+      }
+      app.me = me;
+      lastSeen = Date.now();
+      return me;
+    });
+    sessionCheck = check;
+    // Shared by everything that asks at the same moment; a failed check is retried at once next time.
+    check.then(() => setTimeout(() => { if (sessionCheck === check) sessionCheck = null; }, 2000),
+      () => { if (sessionCheck === check) sessionCheck = null; });
+  }
+  return sessionCheck;
+}
+
+/** For requests outside a screen render (the Ask box checking back): the same one-request-first rule. */
+app.ready = () => (Date.now() - lastSeen > AWAY_MS ? ensureSession() : Promise.resolve());
+
+let renderStartedAt = 0;
+
+function resume() {
+  // A sheet you're in the middle of stays put, and so does Activity's loaded list.
+  if (document.querySelector('.sheet-backdrop')) return;
+  // So does a box you're typing in.
+  const typing = document.activeElement;
+  if (typing && view.contains(typing) && typing.matches('input, textarea')) return;
+  // The amounts re-hiding (or pageshow/online firing with visibilitychange) just started a load: one is enough.
+  if (Date.now() - renderStartedAt < 1000) return;
+  if (parseHash().path === 'activity') {
+    ensureSession().catch(() => {});
+    return;
+  }
+  render({ quiet: true });
+}
+
+let hiddenAt = null;
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    hiddenAt = Date.now();
+    return;
+  }
+  const away = hiddenAt ? Date.now() - hiddenAt : 0;
+  hiddenAt = null;
+  if (away >= AWAY_MS) resume();
+});
+window.addEventListener('pageshow', (e) => { if (e.persisted) resume(); });
+window.addEventListener('online', () => resume());
+
 let current = null;
-async function render() {
+/** @param opts.quiet keep the current screen as it is (no dimming) until the fresh one is ready */
+async function render(opts = {}) {
+  renderStartedAt = Date.now();
   const { path, params } = parseHash();
   const route = ROUTES.find((r) => r.path === path) || ROUTES[0];
   title.textContent = route.title;
@@ -74,22 +152,31 @@ async function render() {
   back.setAttribute('href', '#/' + (fromKnown ? from : route.parent || 'home'));
   const token = {};
   current = token;
-  view.classList.add('loading');
+  if (!opts.quiet) view.classList.add('loading');
   try {
     discardMount();
+    if (Date.now() - lastSeen > AWAY_MS) await ensureSession();
     const el = await route.view.render(params, app);
     if (current !== token) return;
     clear(view).append(el);
+    lastSeen = Date.now();
     if (el.dataset?.title) document.title = el.dataset.title;
     flushMount();
   } catch (e) {
     if (current !== token) return;
+    // A refresh nobody waited for (coming back, re-tapping a tab) that can't reach the server
+    // keeps the screen you had: not when amounts were just re-hidden over it, or another
+    // screen was half loaded.
+    if (opts.quiet && !view.classList.contains('loading') && !view.classList.contains('masking')) {
+      toast('Couldn\u2019t reach Finance. Showing what was here.');
+      return;
+    }
     clear(view).append(h('div', { class: 'card empty' }, e.message));
   } finally {
     if (current === token) view.classList.remove('loading', 'masking');
   }
 }
-app.rerender = render;
+app.rerender = () => render();
 app.go = (hash) => { if (location.hash === hash) render(); else location.hash = hash; };
 
 privacy.onChange((hidden) => {
@@ -110,8 +197,10 @@ syncBtn.addEventListener('click', async () => {
   try {
     const [banks, prices] = await Promise.allSettled([post('/api/sync'), post('/api/investments/refresh')]);
     const errors = banks.status === 'fulfilled' ? banks.value.errors : [banks.reason.message];
+    // Worked, but a bank behind SimpleFIN is broken or days behind: not "Up to date".
+    const warnings = banks.status === 'fulfilled' ? banks.value.warnings || [] : [];
     if (prices.status === 'fulfilled' && prices.value.failed?.length) errors.push('No price for ' + prices.value.failed.join(', '));
-    toast(errors.length ? errors[0] : 'Up to date');
+    toast(errors.length ? errors[0] : warnings.length ? warnings[0] : 'Up to date');
     render();
   } finally {
     syncBtn.classList.remove('spinning');
@@ -141,6 +230,7 @@ window.addEventListener('resize', () => {
 (async () => {
   try {
     app.me = await get('/api/me');
+    bootId = app.me.startedAt;
   } catch {
     return;
   }

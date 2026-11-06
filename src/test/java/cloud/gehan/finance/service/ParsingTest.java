@@ -105,6 +105,22 @@ class ParsingTest {
     }
 
     @Test
+    void aOneOffMarkedWhilePendingStaysOneOffWhenItPosts() {
+        cloud.gehan.finance.model.Account card = new cloud.gehan.finance.model.Account(null, "c1", "Card", AccountType.CREDIT_CARD);
+        LocalDate day = LocalDate.of(2026, 10, 12);
+        // Left out with Claude's "Leave out": only the one-off mark, nothing else touched.
+        cloud.gehan.finance.model.Transaction pending = new cloud.gehan.finance.model.Transaction(card, "p2", day, -89900, "IKEA");
+        pending.setPending(true);
+        pending.setOneOff(true);
+        cloud.gehan.finance.model.Transaction posted = new cloud.gehan.finance.model.Transaction(card, "x3", day.plusDays(1), -89900, "IKEA");
+
+        SyncService.carryOver(List.of(pending), List.of(posted));
+
+        assertThat(posted.isOneOff()).isTrue();
+        assertThat(posted.isReviewed()).isFalse();
+    }
+
+    @Test
     void twiceAMonthPayKnowsWhichTwoDays() {
         // 1st and 15th: Nov 1 fell on a Sunday, so it was paid Friday Oct 30.
         assertThat(PaycheckService.nominal(LocalDate.of(2026, 10, 30), true)).isEqualTo(LocalDate.of(2026, 11, 1));

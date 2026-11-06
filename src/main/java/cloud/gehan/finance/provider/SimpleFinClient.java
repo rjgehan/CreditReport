@@ -35,6 +35,8 @@ import cloud.gehan.finance.provider.FetchResult.TxnData;
 @Component
 public class SimpleFinClient {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(SimpleFinClient.class);
+
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(20))
             .followRedirects(HttpClient.Redirect.NORMAL)
@@ -100,7 +102,7 @@ public class SimpleFinClient {
             throw new ProviderException("SimpleFIN no longer accepts this connection. Create a new Setup Token and reconnect.", true);
         }
         if (response.statusCode() == 402) {
-            throw new ProviderException("SimpleFIN says the subscription needs payment.", true);
+            throw new ProviderException("Subscription needs renewing", false);
         }
         if (response.statusCode() / 100 != 2) {
             throw new ProviderException("SimpleFIN returned HTTP " + response.statusCode(), false);
@@ -115,13 +117,7 @@ public class SimpleFinClient {
         } catch (IOException e) {
             throw new ProviderException("SimpleFIN sent a response that isn't JSON.", e);
         }
-        List<String> warnings = new ArrayList<>();
-        for (JsonNode error : root.path("errors")) {
-            warnings.add(error.isTextual() ? error.asText() : error.path("msg").asText(error.toString()));
-        }
-        for (JsonNode error : root.path("errlist")) {
-            warnings.add(error.path("msg").asText(error.toString()));
-        }
+        List<String> warnings = bankProblems(root);
 
         List<AccountData> accounts = new ArrayList<>();
         List<TxnData> txns = new ArrayList<>();
@@ -133,13 +129,15 @@ public class SimpleFinClient {
                 institution = text(a.path("org"), "domain");
             }
             long balance = orZero(Money.cents(a.path("balance").asText(null)));
+            long asOf = a.path("balance-date").asLong(0);
             accounts.add(new AccountData(
                     id, name, institution, lastFour(name),
                     AccountTypeGuesser.guess(name, institution, balance),
                     balance,
                     Money.cents(a.path("available-balance").asText(null)),
                     null,
-                    a.path("currency").asText("USD")));
+                    a.path("currency").asText("USD"),
+                    asOf > 0 ? Instant.ofEpochSecond(asOf) : null));
 
             for (JsonNode t : a.path("transactions")) {
                 long posted = t.path("posted").asLong(0);
@@ -160,6 +158,44 @@ public class SimpleFinClient {
             }
         }
         return new FetchResult(accounts, txns, List.of(), List.of(), null, true, warnings);
+    }
+
+    /**
+     * What a bank behind the bridge reported: its errlist entries with a connection or account
+     * code (con.*, act.*). The bridge also puts its own notices about the request there (gen.*,
+     * like "Requested date range exceeds recommended range of 45 days"); those aren't a bank's
+     * problem, and counting them would keep a pull from ever looking clean. An older bridge
+     * sends plain "errors" strings only; those count, except its notices about the date range.
+     */
+    static List<String> bankProblems(JsonNode root) {
+        List<String> out = new ArrayList<>();
+        JsonNode errlist = root.path("errlist");
+        if (errlist.isArray() && !errlist.isEmpty()) {
+            for (JsonNode e : errlist) {
+                String code = e.path("code").asText("");
+                String msg = e.path("msg").asText(e.toString());
+                if (code.startsWith("con.") || code.startsWith("act.") || (code.isEmpty() && !aboutTheRequest(msg))) {
+                    out.add(msg);
+                } else {
+                    log.info("SimpleFIN notice ({}): {}", code, msg);
+                }
+            }
+            return out;
+        }
+        for (JsonNode e : root.path("errors")) {
+            String msg = e.isTextual() ? e.asText() : e.path("msg").asText(e.toString());
+            if (aboutTheRequest(msg)) {
+                log.info("SimpleFIN notice: {}", msg);
+            } else {
+                out.add(msg);
+            }
+        }
+        return out;
+    }
+
+    private static boolean aboutTheRequest(String msg) {
+        String m = msg.toLowerCase(java.util.Locale.ROOT);
+        return m.contains("date range") || m.contains("requested range") || m.contains("rate limit");
     }
 
     private HttpResponse<String> send(HttpRequest request) {

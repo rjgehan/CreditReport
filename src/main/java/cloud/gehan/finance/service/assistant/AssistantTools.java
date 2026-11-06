@@ -24,6 +24,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import cloud.gehan.finance.config.AppProperties;
 import cloud.gehan.finance.model.Account;
+import cloud.gehan.finance.model.AccountType;
 import cloud.gehan.finance.model.Category;
 import cloud.gehan.finance.model.CategoryKind;
 import cloud.gehan.finance.model.CategoryRole;
@@ -41,9 +42,14 @@ import cloud.gehan.finance.service.TargetService;
 import jakarta.persistence.criteria.Predicate;
 
 /**
- * What Claude can look at, over MCP: transactions and everything worked out from
- * them, read only. Nothing here returns a balance, net worth or an investment's
- * value; a goal that tracks a balance reports only how far along it is.
+ * What Claude can look at: transactions and everything worked out from them, read
+ * only. Nothing here returns a balance, net worth or an investment's value; a goal
+ * that tracks a balance reports only how far along it is.
+ *
+ * <p>Nor anything a balance could be worked out from: interest and dividends (with the
+ * bank's published rate they give the balance away) and rows on savings, brokerage and
+ * retirement accounts are left out everywhere, totals included. Money moving into
+ * savings still shows, from the checking side.
  */
 @Component
 public class AssistantTools {
@@ -98,11 +104,13 @@ public class AssistantTools {
                 tool("find_transactions",
                         "Search transactions, newest first. Every filter is optional and they combine. Returns the "
                                 + "matching rows (up to limit) plus the count and money in/out across all matches, so "
-                                + "totals are right even when not every row is shown. Hidden accounts are left out.",
+                                + "totals are right even when not every row is shown. Left out by design: hidden accounts, rows "
+                                + "on savings, brokerage and retirement accounts, and interest or dividends (they'd give "
+                                + "balances away). Money moved into savings shows from the checking side, as kind savings.",
                         props(
                                 "query", str("Words to look for in the description, merchant or note, e.g. \"venmo\" or \"trader joe\""),
                                 "category", str("A category name from list_categories_and_accounts, or \"Uncategorized\""),
-                                "account", str("An account name from list_categories_and_accounts"),
+                                "account", str("A checking or card account name from list_categories_and_accounts"),
                                 "kind", enumOf("income, spending, savings (moves into savings and investing) or transfer",
                                         "income", "spending", "savings", "transfer"),
                                 "from", str("First day, YYYY-MM-DD"),
@@ -144,7 +152,8 @@ public class AssistantTools {
                         props(), List.of()),
                 tool("list_categories_and_accounts",
                         "The category names (with kind: income, expense, savings or transfer) and the account names "
-                                + "and types, for filtering find_transactions. No balances.",
+                                + "and types, for filtering find_transactions. No balances. Savings, brokerage and "
+                                + "retirement accounts are listed by name only; their rows aren't shared.",
                         props(), List.of()));
     }
 
@@ -234,6 +243,8 @@ public class AssistantTools {
         Specification<Transaction> spec = (root, q, cb) -> {
             List<Predicate> where = new ArrayList<>();
             where.add(cb.isFalse(root.get("account").get("hidden")));
+            where.add(cb.not(root.get("account").get("type").in(KEPT_ACCOUNTS)));
+            where.add(cb.not(interestRow(root, cb)));
             if (account != null) {
                 where.add(cb.equal(root.get("account"), account));
             }
@@ -294,6 +305,82 @@ public class AssistantTools {
         return result;
     }
 
+    /**
+     * Every transaction Claude may see, oldest first, one line each: "id | date | amount |
+     * description | category | account", plus "one-off" or a note when there is one. For the
+     * Ask box, which gets the whole history in one go (Claude has no tools to look things up).
+     * Not a tool: the claude.ai connector keeps its paged lookups.
+     */
+    @Transactional(readOnly = true)
+    public String ledger(int maxRows) {
+        Specification<Transaction> spec = (root, q, cb) -> cb.and(
+                cb.isFalse(root.get("account").get("hidden")),
+                cb.not(root.get("account").get("type").in(KEPT_ACCOUNTS)),
+                cb.not(interestRow(root, cb)));
+        List<Transaction> rows = txns.findAll(spec, PageRequest.of(0, maxRows,
+                Sort.by(Sort.Order.desc("day"), Sort.Order.desc("id")))).getContent();
+        StringBuilder out = new StringBuilder("id | date | amount | description | category | account\n");
+        for (int i = rows.size() - 1; i >= 0; i--) {
+            Transaction t = rows.get(i);
+            out.append(t.getId()).append(" | ").append(t.getDay()).append(" | ").append(usd(t.getAmountCents()))
+                    .append(" | ").append(clean(t.getDescription()))
+                    .append(" | ").append(t.getCategory() == null ? "Uncategorized" : t.getCategory().getName())
+                    .append(" | ").append(clean(t.getAccount().getName()));
+            if (t.isOneOff()) {
+                out.append(" | one-off");
+            }
+            if (t.isPending()) {
+                out.append(" | pending");
+            }
+            if (t.getNotes() != null && !t.getNotes().isBlank()) {
+                out.append(" | note: ").append(clean(t.getNotes()));
+            }
+            out.append('\n');
+        }
+        return out.toString();
+    }
+
+    private static String clean(String s) {
+        return s == null ? "" : s.replaceAll("[\\r\\n|]", " ").trim();
+    }
+
+    /** Where money is kept rather than spent; their rows would show what's in them. */
+    public static final List<AccountType> KEPT_ACCOUNTS = List.of(AccountType.SAVINGS, AccountType.BROKERAGE,
+            AccountType.RETIREMENT);
+
+    /** Interest or dividends paid to you, by its category or its description. */
+    static boolean interestName(String name) {
+        String n = name == null ? "" : name.toLowerCase(Locale.ROOT);
+        return n.contains("interest") || n.contains("dividend");
+    }
+
+    /**
+     * Interest either way: paid to you (with the rate, it gives a balance away), or charged on a
+     * card or loan (the same for what you owe). A credit on a card that mentions interest is a
+     * refund of it, and stays. Category names count only for income categories, so "Fees &
+     * Interest" refunds aren't caught.
+     */
+    private static Predicate interestRow(jakarta.persistence.criteria.Root<Transaction> root,
+            jakarta.persistence.criteria.CriteriaBuilder cb) {
+        var category = root.join("category", jakarta.persistence.criteria.JoinType.LEFT);
+        var description = cb.lower(root.get("description"));
+        var categoryName = cb.lower(cb.coalesce(category.<String>get("name"), ""));
+        var amount = root.<Long>get("amountCents");
+        var owed = root.get("account").get("type").in(AccountType.CREDIT_CARD, AccountType.LOAN);
+        Predicate paidToYou = cb.and(cb.greaterThan(amount, 0L), cb.not(owed),
+                cb.or(cb.like(description, "%interest%"), cb.like(description, "%dividend%"),
+                        cb.and(cb.equal(category.get("kind"), CategoryKind.INCOME),
+                                cb.or(cb.like(categoryName, "%interest%"), cb.like(categoryName, "%dividend%")))));
+        Predicate charged = cb.and(cb.lessThan(amount, 0L), owed, cb.like(description, "%interest%"));
+        return cb.or(paidToYou, charged);
+    }
+
+    /** Interest and dividends counted in a month's income. */
+    static long interestIn(FlowService.Breakdown b) {
+        return b.income().entrySet().stream().filter(e -> interestName(e.getKey().name()))
+                .mapToLong(Map.Entry::getValue).sum();
+    }
+
     private static Row row(Transaction t) {
         Category c = t.getCategory();
         String merchant = t.getMerchant() == null || t.getMerchant().equalsIgnoreCase(t.getDescription()) ? null : t.getMerchant();
@@ -333,13 +420,15 @@ public class AssistantTools {
         List<MonthTotals> months = new ArrayList<>();
         for (YearMonth m = first; !m.isAfter(last); m = m.plusMonths(1)) {
             FlowService.Breakdown b = flow.month(m);
-            months.add(new MonthTotals(m.toString(), m.equals(now), usd(b.cashIncome()), income(b),
+            long interest = interestIn(b);
+            months.add(new MonthTotals(m.toString(), m.equals(now), usd(b.cashIncome() - interest), income(b),
                     usd(b.spent()), lines(b.expenses()), usd(b.oneOffCents()), usd(b.savedFromCash()),
-                    usd(b.withdrawn()), lines(b.savings()), usd(b.savedPreTax()), usd(b.leftover())));
+                    usd(b.withdrawn()), lines(b.savings()), usd(b.savedPreTax()), usd(b.leftover() - interest)));
         }
         Map<String, Object> result = new LinkedHashMap<>();
         txns.earliestDay().ifPresent(d -> result.put("history_starts", d));
-        result.put("notes", "income is take-home (paychecks arrive after taxes and 401(k)). spent leaves out one-offs "
+        result.put("notes", "income is take-home (paychecks arrive after taxes and 401(k)); interest isn't included. "
+                + "spent leaves out one-offs "
                 + "and transfers between the user's own accounts. left_over = income + taken_from_savings - spent - "
                 + "one_offs - moved_to_savings; negative means the month ran on savings or credit.");
         result.put("months", months);
@@ -348,7 +437,11 @@ public class AssistantTools {
 
     private static List<Line> income(FlowService.Breakdown b) {
         Map<String, Long> by = new LinkedHashMap<>();
-        b.income().forEach((k, v) -> by.merge(k.name(), v, Long::sum));
+        b.income().forEach((k, v) -> {
+            if (!interestName(k.name())) {
+                by.merge(k.name(), v, Long::sum);
+            }
+        });
         // Paychecks with a paystub are kept apart (to show taxes); fold them back in.
         b.pay().forEach(p -> by.merge("Paycheck", p.netCents(), Long::sum));
         return by.entrySet().stream().filter(e -> e.getValue() != 0)
@@ -369,28 +462,34 @@ public class AssistantTools {
 
     private Map<String, Object> thisMonth() {
         ForecastService.Forecast f = forecast.forecast();
+        // The forecast counts interest as income; take it out and redo what depends on it.
+        long interest = interestIn(flow.month(YearMonth.parse(f.month())));
+        long room = f.roomCents() - interest;
+        long free = Math.max(0, room - f.savingsTargetCents());
+        long perDay = free / Math.max(1, f.daysLeft());
         Map<String, Object> r = new LinkedHashMap<>();
         r.put("month", f.month());
         r.put("day_of_month", f.dayOfMonth());
         r.put("days_left", f.daysLeft());
-        r.put("pay_received", usd(f.receivedCents()));
+        r.put("pay_received", usd(f.receivedCents() - interest));
         r.put("pay_still_coming", f.incomeComing().stream().map(c -> new Coming(c.name(), c.day(), usd(c.cents()))).toList());
-        r.put("pay_this_month", usd(f.incomeCents()));
+        r.put("pay_this_month", usd(f.incomeCents() - interest));
         r.put("spent_so_far", usd(f.spentCents()));
         r.put("spent_by_category", f.spentByCategory().stream().map(s -> new Line(s.name(), usd(s.cents()))).toList());
         r.put("one_offs_left_out", usd(f.oneOffCents()));
         r.put("bills_still_due", f.billsComing().stream().map(c -> new Coming(c.name(), c.day(), usd(c.cents()))).toList());
         r.put("bills_still_due_total", usd(f.billsComingCents()));
         r.put("savings_target", usd(f.savingsTargetCents()));
-        r.put("room", usd(f.roomCents()));
-        r.put("free_to_spend", usd(f.freeCents()));
-        r.put("free_per_day", usd(f.perDayCents()));
-        r.put("free_per_week", usd(f.perWeekCents()));
+        r.put("room", usd(room));
+        r.put("free_to_spend", usd(free));
+        r.put("free_per_day", usd(perDay));
+        r.put("free_per_week", usd(perDay * 7));
         r.put("usual_spending_rest_of_month", usd(f.usualRestCents()));
-        r.put("likely_left_at_month_end", usd(f.endCents()));
+        r.put("likely_left_at_month_end", usd(free - f.usualRestCents()));
         r.put("usual_pace_from_own_history", f.history());
         r.put("status", f.status());
-        r.put("notes", "room = pay_this_month - spent_so_far - bills_still_due_total. free_to_spend = room - "
+        r.put("notes", "Interest isn't included in any of these. room = pay_this_month - spent_so_far - "
+                + "bills_still_due_total. free_to_spend = room - "
                 + "savings_target, never below 0. likely_left_at_month_end = free_to_spend - "
                 + "usual_spending_rest_of_month. status: ok; tight (the usual pace from here needs more than is free); "
                 + "under (the full savings target doesn't fit); short (spending and bills exceed pay); unknown (no pay "
@@ -445,10 +544,13 @@ public class AssistantTools {
 
     private Map<String, Object> monthlyExpenses() {
         RecurringService.Overview o = recurring.overview();
+        java.util.Set<String> kept = keptAccountNames();
+        List<RecurringService.Item> shown = o.items().stream().filter(i -> !kept.contains(i.accountName())).toList();
         Map<String, Object> r = new LinkedHashMap<>();
-        r.put("total_per_month", usd(o.monthlyCents()));
-        r.put("charges", o.items().stream().map(AssistantTools::charge).toList());
-        r.put("seem_stopped", o.stopped().stream().map(AssistantTools::charge).toList());
+        r.put("total_per_month", usd(shown.stream().mapToLong(RecurringService.Item::monthlyCents).sum()));
+        r.put("charges", shown.stream().map(AssistantTools::charge).toList());
+        r.put("seem_stopped", o.stopped().stream().filter(i -> !kept.contains(i.accountName()))
+                .map(AssistantTools::charge).toList());
         return r;
     }
 
@@ -479,11 +581,22 @@ public class AssistantTools {
             LocalDate nextExpected, boolean tracked) {
     }
 
+    private java.util.Set<String> keptAccountNames() {
+        java.util.Set<String> kept = new java.util.HashSet<>();
+        accounts.findByHiddenFalse().stream().filter(a -> KEPT_ACCOUNTS.contains(a.getType()))
+                .forEach(a -> kept.add(a.getName()));
+        return kept;
+    }
+
     private Map<String, Object> paychecks() {
         PaycheckService.Overview o = paychecks.overview();
         Map<String, Object> r = new LinkedHashMap<>();
         r.put("average_per_month", usd(o.averageMonthlyCents()));
-        r.put("payers", o.detected().stream().filter(d -> !d.accountHidden())
+        java.util.Set<String> kept = new java.util.HashSet<>();
+        accounts.findByHiddenFalse().stream().filter(a -> KEPT_ACCOUNTS.contains(a.getType()))
+                .forEach(a -> kept.add(a.getName()));
+        r.put("payers", o.detected().stream().filter(d -> !d.accountHidden() && !kept.contains(d.accountName())
+                        && !interestName(d.pattern()) && !interestName(d.example()))
                 .map(d -> new Payer(d.pattern(), d.frequency(), d.count(), usd(d.averageCents()),
                         usd(d.monthlyEstimateCents()), d.lastDate(), d.nextExpected(), d.tracked())).toList());
         r.put("by_month", o.byMonth().stream().map(m -> new Paid(m.month(), usd(m.totalCents()), m.count())).toList());
@@ -527,11 +640,20 @@ public class AssistantTools {
             return null;
         }
         List<Account> visible = accounts.findByHiddenFalse();
-        return visible.stream().filter(a -> a.getName().equalsIgnoreCase(name)).findFirst()
+        // A partial name ("SoFi") means the account whose rows can be shared, if there is one.
+        Account found = visible.stream().filter(a -> a.getName().equalsIgnoreCase(name)).findFirst()
+                .or(() -> visible.stream().filter(a -> !KEPT_ACCOUNTS.contains(a.getType()) && a.getName()
+                        .toLowerCase(Locale.ROOT).contains(name.toLowerCase(Locale.ROOT))).findFirst())
                 .or(() -> visible.stream().filter(a -> a.getName().toLowerCase(Locale.ROOT)
                         .contains(name.toLowerCase(Locale.ROOT))).findFirst())
                 .orElseThrow(() -> new BadInput("No account called \"" + name + "\". Accounts: "
                         + String.join(", ", visible.stream().map(Account::getName).toList())));
+        if (KEPT_ACCOUNTS.contains(found.getType())) {
+            throw new BadInput("Rows on " + found.getName() + " aren't shared: savings, brokerage and retirement "
+                    + "accounts would give their balance away. Money moved into it shows from the checking side: "
+                    + "use kind \"savings\" without an account, or search its name with query.");
+        }
+        return found;
     }
 
     private static String text(JsonNode in, String field) {

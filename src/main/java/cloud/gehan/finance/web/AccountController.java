@@ -43,19 +43,21 @@ public class AccountController {
     private final TransactionRepository txns;
     private final ConnectionService connectionService;
     private final SyncService sync;
+    private final cloud.gehan.finance.service.Freshness freshness;
     private final Balances balances;
     private final Categorizer categorizer;
     private final TransactionTemplate tx;
     private final AppProperties props;
 
     public AccountController(AccountRepository accounts, ConnectionRepository connections, TransactionRepository txns,
-            ConnectionService connectionService, SyncService sync, Balances balances, Categorizer categorizer,
-            TransactionTemplate tx, AppProperties props) {
+            ConnectionService connectionService, SyncService sync, cloud.gehan.finance.service.Freshness freshness,
+            Balances balances, Categorizer categorizer, TransactionTemplate tx, AppProperties props) {
         this.accounts = accounts;
         this.connections = connections;
         this.txns = txns;
         this.connectionService = connectionService;
         this.sync = sync;
+        this.freshness = freshness;
         this.balances = balances;
         this.categorizer = categorizer;
         this.tx = tx;
@@ -180,13 +182,20 @@ public class AccountController {
     @PostMapping("/connections/{id}/sync")
     public Map<String, Object> syncOne(@PathVariable Long id) {
         String error = sync.syncOne(id);
-        return error == null ? Map.of("ok", true) : Map.of("ok", false, "error", error);
+        if (error != null) {
+            return Map.of("ok", false, "error", error);
+        }
+        String warning = connections.findById(id).map(cloud.gehan.finance.model.Connection::getLastError).orElse(null);
+        return warning == null || warning.isBlank() ? Map.of("ok", true) : Map.of("ok", true, "warning", warning);
     }
 
     @PostMapping("/sync")
     public Map<String, Object> syncAll() {
         List<String> errors = sync.syncAll();
-        return Map.of("ok", errors.isEmpty(), "errors", errors);
+        // A pull can succeed while a bank behind it is broken or days behind; say so.
+        List<String> warnings = freshness.problems().stream().filter(p -> errors.stream().noneMatch(
+                e -> e.startsWith(p.name() + ":"))).map(cloud.gehan.finance.service.Freshness.Problem::line).toList();
+        return Map.of("ok", errors.isEmpty(), "errors", errors, "warnings", warnings);
     }
 
     @DeleteMapping("/connections/{id}")

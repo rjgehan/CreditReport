@@ -43,7 +43,8 @@ public final class Views {
     public record AccountView(Long id, String name, String institution, String mask, String type, String group,
             long balanceCents, Long availableCents, Long creditLimitCents, Long statementBalanceCents,
             Long minimumPaymentCents, LocalDate paymentDueDate, Double aprPercent, boolean hidden, boolean manual,
-            Long connectionId, String provider, Instant balanceUpdatedAt, String logo, Long monthAgoCents) {
+            Long connectionId, String provider, Instant balanceUpdatedAt, String logo, Long monthAgoCents,
+            Instant dataAsOf) {
 
         public static AccountView of(Account a) {
             return of(a, null);
@@ -57,7 +58,8 @@ public final class Views {
                     a.getStatementBalanceCents(), a.getMinimumPaymentCents(), a.getPaymentDueDate(),
                     a.getAprPercent(), a.isHidden(), a.isManual(),
                     c == null ? null : c.getId(), c == null ? "MANUAL" : c.getProvider().name(),
-                    a.getBalanceUpdatedAt(), MerchantLogos.domainFor(a.getInstitution(), a.getName()), monthAgoCents);
+                    a.getBalanceUpdatedAt(), MerchantLogos.domainFor(a.getInstitution(), a.getName()), monthAgoCents,
+                    a.getDataAsOf());
         }
     }
 

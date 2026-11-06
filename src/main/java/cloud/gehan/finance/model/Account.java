@@ -65,6 +65,12 @@ public class Account {
 
     private Instant balanceUpdatedAt;
 
+    /**
+     * When the bank last had fresh data for it (SimpleFIN's balance-date). It stops moving
+     * when the bank needs a fresh sign-in on the bridge, while syncs keep succeeding.
+     */
+    private Instant dataAsOf;
+
     protected Account() {
     }
 
@@ -112,4 +118,6 @@ public class Account {
     public void setHidden(boolean hidden) { this.hidden = hidden; }
     public Instant getBalanceUpdatedAt() { return balanceUpdatedAt; }
     public void setBalanceUpdatedAt(Instant balanceUpdatedAt) { this.balanceUpdatedAt = balanceUpdatedAt; }
+    public Instant getDataAsOf() { return dataAsOf; }
+    public void setDataAsOf(Instant dataAsOf) { this.dataAsOf = dataAsOf; }
 }

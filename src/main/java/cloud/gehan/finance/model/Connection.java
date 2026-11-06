@@ -46,6 +46,9 @@ public class Connection {
 
     private Instant lastSyncedAt;
 
+    /** The last pull with no bank reporting a problem; the next pull starts from here. */
+    private Instant lastCleanSyncAt;
+
     @Column(nullable = false)
     private Instant createdAt = Instant.now();
 
@@ -73,5 +76,7 @@ public class Connection {
     public void setLastError(String lastError) { this.lastError = lastError; }
     public Instant getLastSyncedAt() { return lastSyncedAt; }
     public void setLastSyncedAt(Instant lastSyncedAt) { this.lastSyncedAt = lastSyncedAt; }
+    public Instant getLastCleanSyncAt() { return lastCleanSyncAt; }
+    public void setLastCleanSyncAt(Instant lastCleanSyncAt) { this.lastCleanSyncAt = lastCleanSyncAt; }
     public Instant getCreatedAt() { return createdAt; }
 }

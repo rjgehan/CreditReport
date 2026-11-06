@@ -50,7 +50,9 @@ public class McpController {
             charges, rent and loans, and paychecks.
 
             By design they can't see account balances, net worth or what investments are worth. If asked, say so \
-            and point the user to the app's Accounts tab; don't work a balance out from transactions.
+            and point the user to the app's Accounts tab; don't work a balance out from transactions. For the same \
+            reason, rows on savings, brokerage and retirement accounts and interest aren't shared; money moved into \
+            savings shows from the checking side. Don't read their absence as nothing happening there.
 
             The tools only read. To change something, tell the user where in the app: Activity for transactions \
             and their categories, Home for targets and goals, Accounts > More for monthly expenses, rent and loans, \

@@ -12,10 +12,13 @@ export async function render(params, app) {
   const root = h('div', { class: 'grid' });
   const refresh = () => app.rerender();
 
-  // A broken connection is the one thing worth seeing before the numbers.
-  for (const c of connections.filter((c) => c.status !== 'OK')) {
+  // A broken connection is the one thing worth seeing before the numbers. That includes a pull
+  // that worked while SimpleFIN says a bank behind it needs attention.
+  for (const c of connections.filter((c) => c.status !== 'OK' || c.lastError)) {
+    const what = c.status === 'NEEDS_REAUTH' ? 'needs you to sign in again.'
+      : c.status === 'OK' ? 'says a bank needs attention.' : 'failed to sync.';
     root.append(h('div', { class: 'banner' }, h('div', { style: { flex: 1 } },
-      h('strong', null, c.displayName), ' ', c.status === 'NEEDS_REAUTH' ? 'needs you to sign in again.' : 'failed to sync.',
+      h('strong', null, c.displayName), ' ', what,
       c.lastError ? h('div', { class: 'hint' }, c.lastError) : null),
     c.provider === 'SIMPLEFIN' ? h('button', { class: 'btn small', onclick: () => connectBank(app, c, refresh) }, 'Fix') : null));
   }
@@ -46,12 +49,18 @@ export async function render(params, app) {
     if (a.mask) sub.push('••' + a.mask);
     if (a.type === 'CREDIT_CARD' && a.creditLimitCents) sub.push(`${pct(-a.balanceCents / a.creditLimitCents)} of limit`);
     if (a.type === 'CREDIT_CARD' && a.paymentDueDate) sub.push('due ' + shortDate(a.paymentDueDate));
+    // The bank stopped sending anything new (it usually needs a fresh sign-in on SimpleFIN).
+    const behind = !a.manual && a.dataAsOf && Date.now() - new Date(a.dataAsOf).getTime() > 3 * 86400000;
+    if (behind) {
+      const d = new Date(a.dataAsOf);
+      sub.push('nothing new since ' + shortDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`));
+    }
     const row = h('button', { class: 'row',
       onclick: () => (investment ? app.go('#/investment?id=' + a.id) : editAccount(a, refresh)) },
     logoAvatar(a.logo, avatarFor(a)),
     h('div', { class: 'main' },
       h('div', { class: 'title' }, `${a.institution ? a.institution + ' ' : ''}${a.name}`),
-      sub.length ? h('div', { class: 'meta' }, sub.join(' · ')) : null),
+      sub.length ? h('div', { class: 'meta' + (behind ? ' behind' : '') }, sub.join(' · ')) : null),
     h('div', { class: 'amount' }, balance(a.balanceCents, a.monthAgoCents, { cents: true, owed: owes(a) })));
     return a.hidden
       ? swipeable(row, 'Show', () => setHidden(a, false), 'show')
@@ -134,7 +143,7 @@ export async function render(params, app) {
         h('button', { class: 'btn small', onclick: async (e) => {
           const b = e.currentTarget; b.disabled = true;
           const r = await post(`/api/connections/${c.id}/sync`).finally(() => { b.disabled = false; });
-          toast(r.ok ? 'Synced' : r.error); refresh();
+          toast(syncedLine(r)); refresh();
         } }, 'Sync'),
         h('button', { class: 'btn small danger', onclick: async () => {
           if (!(await confirmSheet(`Remove ${c.displayName}?`, 'Its accounts, transactions and balance history are deleted from this app. Nothing changes at the bank.', 'Remove'))) return;
@@ -155,6 +164,12 @@ export async function render(params, app) {
           h('div', { class: 'meta wrap' }, 'Hides net worth and account balances; while hidden they show their change over the past month. Spending, bills and goals always show. Hidden again whenever the app opens or sits in the background')),
         showAmounts)));
   return root;
+}
+
+/** A pull can work while a bank behind SimpleFIN still reports a problem; don't call that just "Synced". */
+function syncedLine(r) {
+  if (!r.ok) return r.error;
+  return r.warning ? 'Synced, but SimpleFIN still says: ' + r.warning : 'Synced';
 }
 
 function owes(a) {
@@ -186,7 +201,7 @@ function connectBank(app, repair, done) {
           h('a', { class: 'btn primary', href: 'https://bridge.simplefin.org', target: '_blank', rel: 'noopener' }, 'Open SimpleFIN'),
           h('button', { class: 'btn', onclick: async () => {
             const r = await post(`/api/connections/${repair.id}/sync`);
-            toast(r.ok ? 'Synced' : r.error); s.close(); done();
+            toast(syncedLine(r)); s.close(); done();
           } }, 'Sync now')),
         h('p', { class: 'hint' }, 'Still failing? Make a new setup token on the bridge and paste it below to replace this connection.'),
         simpleFinForm(s, done));

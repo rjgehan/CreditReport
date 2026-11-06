@@ -82,7 +82,15 @@ class InsightsTest {
                     } else if (input.contains("Write the review")) {
                         answer = "{\"review\":[\"Spending was steady.\"],\"targets\":[{\"category\":\"Groceries\",\"monthly_limit\":400,\"reason\":\"You spend about $380\"}]}";
                     } else if (input.contains("They ask")) {
-                        answer = "{\"answer\":\"yes\",\"text\":\"Yes: $500 is free this month.\"}";
+                        // Cite the deli and the bar from the ledger.
+                        List<String> ids = new java.util.ArrayList<>();
+                        for (String line : input.substring(input.indexOf("Ledger:")).split("\n")) {
+                            if (line.contains("CORNER DELI") || line.contains("THE BAR")) {
+                                ids.add(line.substring(0, line.indexOf(' ')));
+                            }
+                        }
+                        answer = "{\"verdict\":\"yes\",\"lines\":[\"Yes: it fits.\",\"Food so far is $115.\"],"
+                                + "\"transaction_ids\":[" + String.join(",", ids) + "]}";
                     } else {
                         answer = "{\"ok\":true}";
                     }
@@ -122,6 +130,14 @@ class InsightsTest {
                 .filter(c -> c.get("name").asText().equals("Shopping")).findFirst().orElseThrow().get("id").asLong();
         call(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/api/transactions/" + mattress),
                 "{\"categoryId\":" + shopping + "}");
+        // Interest gives a balance away (with the bank's rate), so Claude never sees it: not on
+        // savings, not on checking.
+        long savings = call(post("/api/accounts"), "{\"name\":\"Rainy day\",\"type\":\"SAVINGS\",\"balanceCents\":987654}")
+                .get("id").asLong();
+        call(post("/api/transactions"), String.format(
+                "{\"accountId\":%d,\"day\":\"%s\",\"amountCents\":3417,\"description\":\"INTEREST PAYMENT\"}", savings, old));
+        call(post("/api/transactions"), String.format(
+                "{\"accountId\":%d,\"day\":\"%s\",\"amountCents\":119,\"description\":\"INTEREST EARNED\"}", checking, old));
 
         assertThat(call(get("/api/insights"), null).get("configured").asBoolean()).isFalse();
         call(put("/api/insights/token"), "{\"token\":\"sk-ant-oat01-test\"}");
@@ -164,12 +180,29 @@ class InsightsTest {
 
         // What Claude was asked: no balance in it, and no tools to use.
         for (String p : prompts) {
-            assertThat(p).doesNotContain("45678").doesNotContainIgnoringCase("balance\"");
+            assertThat(p).doesNotContain("45678.91").doesNotContain("9876.54").doesNotContainIgnoringCase("balance\"")
+                    .doesNotContain("INTEREST PAYMENT").doesNotContain("INTEREST EARNED").doesNotContain("34.17")
+                    .doesNotContain("Rainy day");
         }
         assertThat(commands.get(commands.size() - 1)).containsSubsequence("--tools", "");
 
-        JsonNode a = call(post("/api/insights/afford"), "{\"question\":\"A $200 concert?\"}");
-        assertThat(a.get("answer").asText()).isEqualTo("yes");
+        // Ask: answered in the background, kept, with the cited rows totalled by the app.
+        JsonNode started = call(post("/api/insights/ask"), "{\"question\":\"Can I afford a $200 concert?\"}");
+        assertThat(started.get("status").asText()).isEqualTo("RUNNING");
+        JsonNode answered = started;
+        for (int i = 0; i < 100 && answered.get("status").asText().equals("RUNNING"); i++) {
+            Thread.sleep(100);
+            answered = call(get("/api/insights/questions/" + started.get("id").asLong()), null);
+        }
+        assertThat(answered.get("status").asText()).isEqualTo("DONE");
+        assertThat(answered.get("verdict").asText()).isEqualTo("yes");
+        assertThat(answered.at("/lines/0").asText()).isEqualTo("Yes: it fits.");
+        assertThat(answered.get("rows")).hasSize(2);
+        assertThat(answered.get("totalCents").asLong()).isEqualTo(-2500 - 9000);
+        assertThat(call(get("/api/insights"), null).at("/ask/id").asLong()).isEqualTo(started.get("id").asLong());
+        String asked = prompts.get(prompts.size() - 1);
+        assertThat(asked).contains("Ledger:").contains("CORNER DELI").doesNotContain("INTEREST PAYMENT")
+                .doesNotContain("9876.54");
 
         // Approving and dismissing take items off the list.
         JsonNode open = call(get("/api/insights"), null);

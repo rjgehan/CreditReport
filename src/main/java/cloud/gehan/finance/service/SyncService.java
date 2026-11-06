@@ -130,12 +130,25 @@ public class SyncService {
         }
     }
 
-    private LocalDate simpleFinSince(Connection c) {
-        LocalDate today = LocalDate.now(zone);
+    /**
+     * From the last pull no bank complained about, or from where an account's data stopped
+     * if that's earlier, so the days a broken bank missed come back once it's fixed on the
+     * bridge. Never further back than SimpleFIN keeps.
+     */
+    LocalDate simpleFinSince(Connection c) {
+        // Midnight 89 days back: today's hours on top keep the request inside SimpleFIN's 90 days.
+        LocalDate floor = LocalDate.now(zone).minusDays(SIMPLEFIN_FIRST_DAYS - 1);
         if (c.getLastSyncedAt() == null) {
-            return today.minusDays(SIMPLEFIN_FIRST_DAYS);
+            return floor;
         }
-        return c.getLastSyncedAt().atZone(zone).toLocalDate().minusDays(SIMPLEFIN_OVERLAP_DAYS);
+        Instant from = c.getLastCleanSyncAt() != null ? c.getLastCleanSyncAt() : c.getLastSyncedAt();
+        for (Account a : accounts.findByConnection(c)) {
+            if (!a.isHidden() && a.getDataAsOf() != null && a.getDataAsOf().isBefore(from)) {
+                from = a.getDataAsOf();
+            }
+        }
+        LocalDate since = from.atZone(zone).toLocalDate().minusDays(SIMPLEFIN_OVERLAP_DAYS);
+        return since.isBefore(floor) ? floor : since;
     }
 
     void apply(Long connectionId, FetchResult result) {
@@ -157,6 +170,9 @@ public class SyncService {
                 account.setMask(a.mask());
             }
             account.setCurrency(a.currency());
+            if (a.balanceDate() != null) {
+                account.setDataAsOf(a.balanceDate());
+            }
             account.setAvailableCents(a.availableCents());
             if (a.creditLimitCents() != null) {
                 account.setCreditLimitCents(a.creditLimitCents());
@@ -168,7 +184,12 @@ public class SyncService {
         // Accounts the provider didn't list this time (closed, or temporarily
         // missing) still resolve, so their transactions land in the right place.
         for (Account existing : accounts.findByConnection(c)) {
-            byExternalId.putIfAbsent(existing.getExternalId(), existing);
+            if (byExternalId.putIfAbsent(existing.getExternalId(), existing) == null) {
+                // The bridge no longer reports it (closed, or removed there): how old its data
+                // is says nothing about a broken feed, so it isn't "behind" and doesn't pull
+                // every sync back to where it stopped.
+                existing.setDataAsOf(null);
+            }
         }
 
         for (LiabilityData l : result.liabilities()) {
@@ -248,18 +269,25 @@ public class SyncService {
         c.setSyncCursor(result.nextCursor());
         c.setLastSyncedAt(Instant.now());
         c.setStatus(ConnectionStatus.OK);
+        // A 200 can still carry a bank's error; that's a warning, and the next pull starts
+        // from the last clean one so whatever it missed comes back once it's fixed.
         c.setLastError(result.warnings().isEmpty() ? null : String.join("; ", result.warnings()));
+        if (result.warnings().isEmpty()) {
+            c.setLastCleanSyncAt(c.getLastSyncedAt());
+        }
     }
 
     /**
      * A pending charge comes back posted under a new id (often with a tip added). What you
-     * did to the pending one (checked it off, picked its category, wrote a note) moves to
-     * the posted one: same account, same direction, within a few days and a quarter of the amount.
+     * did to the pending one (checked it off, picked its category, wrote a note, left it out
+     * of your averages as a one-off) moves to the posted one: same account, same direction,
+     * within a few days and a quarter of the amount.
      */
     static void carryOver(List<Transaction> doomed, List<Transaction> posted) {
         Set<Transaction> claimed = new HashSet<>();
         for (Transaction p : doomed) {
-            boolean yours = p.isReviewed() || p.getCategorySource() == CategorySource.MANUAL || p.getNotes() != null;
+            boolean yours = p.isReviewed() || p.getCategorySource() == CategorySource.MANUAL || p.getNotes() != null
+                    || p.isOneOff();
             if (!p.isPending() || !yours) {
                 continue;
             }
@@ -290,6 +318,10 @@ public class SyncService {
             }
             if (best.getNotes() == null && p.getNotes() != null) {
                 best.setNotes(p.getNotes());
+            }
+            // Otherwise the whole purchase lands back in the month the night it posts.
+            if (p.isOneOff()) {
+                best.setOneOff(true);
             }
         }
     }

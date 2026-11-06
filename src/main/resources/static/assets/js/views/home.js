@@ -77,13 +77,21 @@ function sparkline(points, up) {
     h('circle', { cx: x(last), cy: y(values[last]), r: 2.5, fill: color }));
 }
 
+const PROBLEM = {
+  NEEDS_REAUTH: () => 'sign in again',
+  ERROR: (p) => (p.error && p.error.length <= 48 ? p.error.toLowerCase() : 'sync failed'),
+  WARNING: () => 'a bank needs attention',
+  BEHIND: (p) => `nothing new since ${shortDate(p.since)}`,
+};
+
 function syncStatus(d) {
+  // A bank can stop updating while syncs still succeed; that matters more than "synced 2 h ago".
   if (d.problems.length === 1) {
     const p = d.problems[0];
-    return h('span', { class: 'status bad' }, `${p.name}: ${p.status === 'NEEDS_REAUTH' ? 'sign in again' : 'sync failed'}`);
+    return h('a', { class: 'status bad', href: '#/accounts' }, `${p.name}: ${(PROBLEM[p.status] || PROBLEM.ERROR)(p)}`);
   }
   if (d.problems.length > 1) {
-    return h('span', { class: 'status bad' }, `${d.problems.length} connections need attention`);
+    return h('a', { class: 'status bad', href: '#/accounts' }, `${d.problems.length} bank problems`);
   }
   if (!d.lastSyncedAt) return h('span', { class: 'status' });
   const hours = (Date.now() - new Date(d.lastSyncedAt).getTime()) / 3600000;

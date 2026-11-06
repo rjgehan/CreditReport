@@ -39,16 +39,18 @@ public class SummaryService {
     private final TargetService targets;
     private final NetWorthService netWorth;
     private final Budget budget;
+    private final Freshness freshness;
     private final ZoneId zone;
 
     public SummaryService(AccountRepository accounts, ConnectionRepository connections, FlowService flow,
-            TargetService targets, NetWorthService netWorth, Budget budget, AppProperties props) {
+            TargetService targets, NetWorthService netWorth, Budget budget, Freshness freshness, AppProperties props) {
         this.accounts = accounts;
         this.connections = connections;
         this.flow = flow;
         this.targets = targets;
         this.netWorth = netWorth;
         this.budget = budget;
+        this.freshness = freshness;
         this.zone = props.zoneId();
     }
 
@@ -62,8 +64,6 @@ public class SummaryService {
             Double utilization, LocalDate dueDate, Long minimumPaymentCents, Long statementBalanceCents) {
     }
 
-    public record Problem(Long connectionId, String name, String status, String error) {
-    }
 
     /**
      * @param netWorthChangeCents change over the sparkline's window; null without enough history
@@ -74,7 +74,7 @@ public class SummaryService {
             List<Point> netWorthHistory, List<Point> netWorthSpark, Long netWorthChangeCents,
             Double netWorthChangePercent, Integer netWorthChangeDays, Budget.MonthPlan plan,
             TargetService.Progress targets, List<Card> cards,
-            Instant lastSyncedAt, List<Problem> problems, boolean hasAccounts) {
+            Instant lastSyncedAt, List<Freshness.Problem> problems, boolean hasAccounts) {
     }
 
     public Home home(YearMonth month) {
@@ -138,15 +138,12 @@ public class SummaryService {
                 .toList();
 
         Instant lastSynced = null;
-        List<Problem> problems = new ArrayList<>();
         for (Connection c : connections.findByProviderNot(ProviderType.MANUAL)) {
             if (c.getLastSyncedAt() != null && (lastSynced == null || c.getLastSyncedAt().isAfter(lastSynced))) {
                 lastSynced = c.getLastSyncedAt();
             }
-            if (c.getStatus() != ConnectionStatus.OK) {
-                problems.add(new Problem(c.getId(), c.getDisplayName(), c.getStatus().name(), c.getLastError()));
-            }
         }
+        List<Freshness.Problem> problems = freshness.problems();
 
         return new Home(month.toString(), assets - liabilities, assets, liabilities, groupList, history, spark,
                 change, changePct, changeDays, budget.plan(month, b), targets.progress(month), cards, lastSynced, problems,

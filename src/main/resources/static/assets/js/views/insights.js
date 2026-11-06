@@ -1,6 +1,7 @@
-// Claude's notes: the card on Home, and the page behind it with "Can I afford it?",
-// the week's recap, charges to check and the changes it suggests for you to approve:
-// rules, targets, and once-in-a-while purchases to leave out of your monthly averages.
+// Claude's notes: the card on Home, and the page behind it with the Ask box (anything
+// about your money, "Can I afford it?" included), the week's recap, charges to check and
+// the changes it suggests for you to approve: rules, targets, and once-in-a-while
+// purchases to leave out of your monthly averages.
 
 import { get, post, put, patch } from '../api.js';
 import { h, toast, busy } from '../ui.js';
@@ -36,7 +37,7 @@ export function insightCard(s, app) {
       h('span', { class: 'claude-headline' }, t.headline))
       : h('div', { class: 'hint' }, s.lastError || 'No notes yet. Tap Refresh, or they arrive each morning.'),
     t && t.lines.length ? h('ul', { class: 'claude-lines' }, t.lines.map((l) => h('li', null, l))) : null,
-    h('a', { class: 'claude-more', href: '#/insights' }, counts.length ? counts.join(' · ') : 'Can I afford it?'));
+    h('a', { class: 'claude-more', href: '#/insights' }, counts.length ? counts.join(' · ') : 'Ask Claude'));
 }
 
 export async function render(params, app) {
@@ -45,29 +46,88 @@ export async function render(params, app) {
     return h('div', { class: 'card empty' }, h('p', null, 'Claude isn\'t set up yet.'),
       h('a', { class: 'btn primary', href: '#/claude' }, 'Set up Claude'));
   }
-  return h('div', { class: 'grid' }, afford(), week(s), charges(s, app), suggestions(s, app),
+  return h('div', { class: 'grid' }, askCard(s.ask, app), week(s), charges(s, app), suggestions(s, app),
     s.lastError ? h('p', { class: 'hint', style: { textAlign: 'center' } }, s.lastError) : null);
 }
 
-function afford() {
-  const input = h('input', { class: 'field', placeholder: 'A $200 concert this weekend?', maxlength: 300,
-    enterkeyhint: 'send', 'aria-label': 'What do you want to buy?' });
+// --- Ask --------------------------------------------------------------------------------
+
+const VERDICT = { yes: ['good', 'Yes'], careful: ['warn', 'Careful'], no: ['bad', 'No'] };
+const PRESETS = [
+  ['Can I afford…', 'Can I afford ', false],
+  ['What did the move cost?', 'How much did the move cost all in?', true],
+  ['Food per week', 'What do I spend on food in a typical week?', true],
+];
+
+// What you've typed and not sent yet survives the screen being rebuilt (coming back to the
+// app, amounts re-hiding, approving a suggestion).
+let draft = '';
+
+/** The latest question stays here, answered or still on its way, until the next one. */
+function askCard(last, app) {
+  const input = h('input', { class: 'field', placeholder: 'Ask about your money', maxlength: 300,
+    enterkeyhint: 'send', 'aria-label': 'Ask Claude', value: draft });
+  input.addEventListener('input', () => { draft = input.value; });
   const out = h('div');
-  const ask = h('button', { class: 'btn primary', type: 'submit' }, 'Ask');
-  const form = h('form', { class: 'claude-ask', onsubmit: (e) => { e.preventDefault(); go(); } }, input, ask);
-  const go = busy(ask, async () => {
+  const send = h('button', { class: 'btn primary', type: 'submit' }, 'Ask');
+  const go = busy(send, async () => {
     const q = input.value.trim();
     if (!q) return input.focus();
-    out.replaceChildren(h('p', { class: 'hint' }, 'Claude is looking…'));
     try {
-      const a = await post('/api/insights/afford', { question: q });
-      const [cls, word] = { yes: ['good', 'Yes'], careful: ['warn', 'Careful'], no: ['bad', 'No'] }[a.answer] || ['', ''];
-      out.replaceChildren(h('div', { class: 'claude-answer' }, h('span', { class: 'pill ' + cls }, word), h('span', null, a.text)));
+      const started = await post('/api/insights/ask', { question: q });
+      input.value = '';
+      draft = '';
+      show(out, started, app);
     } catch (e) {
-      out.replaceChildren(h('p', { class: 'error-text' }, e.message));
+      toast(e.message);
     }
   });
-  return h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Can I afford it?')), form, out);
+  const form = h('form', { class: 'claude-ask', onsubmit: (e) => { e.preventDefault(); go(); } }, input, send);
+  const presets = h('div', { class: 'claude-presets' }, PRESETS.map(([label, text, now]) => h('button', {
+    class: 'chip', type: 'button', onclick: () => {
+      input.value = text;
+      draft = text;
+      if (now) go(); else input.focus();
+    } }, label)));
+  if (last) show(out, last, app);
+  return h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Ask Claude')), form, presets, out);
+}
+
+function show(out, q, app) {
+  // Each card checks back on its own question; a newer question or a rebuilt screen ends it.
+  clearTimeout(out.poll);
+  out.qid = q.id;
+  const asked = h('div', { class: 'claude-asked' }, q.question);
+  if (q.status === 'RUNNING') {
+    out.replaceChildren(asked, h('p', { class: 'hint' }, 'Claude is looking through your history. About a minute; you can leave this screen.'));
+    out.poll = setTimeout(async () => {
+      if (!out.isConnected) return;
+      let next = q;
+      try {
+        // Coming back from a locked phone: wait for the one sign-in check before asking.
+        await app.ready();
+        next = await get(`/api/insights/questions/${q.id}`);
+      } catch { /* check again in a moment */ }
+      if (out.isConnected && out.qid === q.id) show(out, next, app);
+    }, 3000);
+    return;
+  }
+  if (q.status === 'FAILED') {
+    out.replaceChildren(asked, h('p', { class: 'error-text' }, q.error || 'Claude couldn\'t answer. Try again.'));
+    return;
+  }
+  const [cls, word] = VERDICT[q.verdict] || [];
+  const rows = q.rows.length ? h('div', { class: 'claude-rows' },
+    q.rows.map((r) => h('div', { class: 'claude-row' },
+      h('span', { class: 'when' }, shortDate(r.day)), h('span', { class: 'what' }, r.description),
+      h('span', { class: 'amt' }, money(r.amountCents, { cents: true })))),
+    q.totalCents !== null && q.totalCents !== undefined
+      ? h('div', { class: 'claude-row total' }, h('span', { class: 'when' }), h('span', { class: 'what' }, `These ${q.rows.length} add up to`),
+        h('span', { class: 'amt' }, money(q.totalCents, { cents: true }))) : null) : null;
+  out.replaceChildren(asked,
+    h('div', { class: 'claude-answer' }, word ? h('span', { class: 'pill ' + cls }, word) : null,
+      h('ul', { class: 'claude-lines' }, q.lines.map((l) => h('li', null, l)))),
+    rows);
 }
 
 function week(s) {

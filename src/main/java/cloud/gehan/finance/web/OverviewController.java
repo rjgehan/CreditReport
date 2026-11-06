@@ -36,9 +36,13 @@ public class OverviewController {
         return forecast.forecast();
     }
 
+    /** Changes when the server restarts (an update, say), so an open app knows to reload its screens. */
+    static final String STARTED_AT = java.time.Instant.now().toString();
+
     @GetMapping("/api/me")
     public Map<String, Object> me(Principal principal) {
         Map<String, Object> me = new HashMap<>();
+        me.put("startedAt", STARTED_AT);
         me.put("username", principal.getName());
         me.put("demo", props.demoData());
         me.put("today", LocalDate.now(props.zoneId()).toString());

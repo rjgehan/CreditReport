@@ -67,8 +67,12 @@ public class ClaudeCode {
     private final Path home;
     private final String bin;
     private final String model;
-    /** One run at a time: the container has room for one Claude Code process next to the app. */
-    private final ReentrantLock running = new ReentrantLock();
+    /**
+     * One run at a time: the container has room for one Claude Code process next to the app.
+     * Fair, so whoever asked first goes first; the rest wait their turn instead of failing.
+     */
+    private final ReentrantLock running = new ReentrantLock(true);
+    static final Duration WAIT = Duration.ofMinutes(10);
 
     public ClaudeCode(Cli cli, AppSettingRepository settings, SecretCipher cipher, TransactionTemplate tx,
             ObjectMapper json, AppProperties props, @Value("${app.claude-bin:claude}") String bin,
@@ -126,8 +130,13 @@ public class ClaudeCode {
     }
 
     private JsonNode run(String system, String prompt, Map<String, Object> schema, String token) {
-        if (!running.tryLock()) {
-            throw new Problem("Claude is already working on something. Try again in a minute.");
+        try {
+            if (!running.tryLock(WAIT.toSeconds(), TimeUnit.SECONDS)) {
+                throw new Problem("Claude is busy with something else. Try again in a few minutes.");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new Problem("Claude was interrupted.");
         }
         try {
             Path work = home.resolve("work");

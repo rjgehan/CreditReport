@@ -24,23 +24,28 @@ import org.springframework.web.bind.annotation.RestController;
 import cloud.gehan.finance.model.Category;
 import cloud.gehan.finance.model.Insight;
 import cloud.gehan.finance.model.InsightItem;
+import cloud.gehan.finance.model.Question;
 import cloud.gehan.finance.model.Transaction;
 import cloud.gehan.finance.repo.CategoryRepository;
 import cloud.gehan.finance.repo.InsightItemRepository;
 import cloud.gehan.finance.repo.InsightRepository;
+import cloud.gehan.finance.repo.QuestionRepository;
 import cloud.gehan.finance.repo.TransactionRepository;
+import cloud.gehan.finance.service.insights.Ask;
 import cloud.gehan.finance.service.insights.ClaudeCode;
 import cloud.gehan.finance.service.insights.Insights;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
-/** Claude's notes for Home, its flags and suggestions, "Can I afford it?", and its sign-in. */
+/** Claude's notes for Home, its flags and suggestions, the Ask box, and its sign-in. */
 @RestController
 @RequestMapping("/api/insights")
 public class InsightsController {
 
     private final Insights insights;
+    private final Ask ask;
+    private final QuestionRepository questions;
     private final ClaudeCode claude;
     private final InsightRepository notes;
     private final InsightItemRepository items;
@@ -48,9 +53,12 @@ public class InsightsController {
     private final CategoryRepository categories;
     private final TransactionTemplate tx;
 
-    public InsightsController(Insights insights, ClaudeCode claude, InsightRepository notes, InsightItemRepository items,
-            TransactionRepository txns, CategoryRepository categories, TransactionTemplate tx) {
+    public InsightsController(Insights insights, Ask ask, QuestionRepository questions, ClaudeCode claude,
+            InsightRepository notes, InsightItemRepository items, TransactionRepository txns,
+            CategoryRepository categories, TransactionTemplate tx) {
         this.insights = insights;
+        this.ask = ask;
+        this.questions = questions;
         this.claude = claude;
         this.notes = notes;
         this.items = items;
@@ -103,8 +111,38 @@ public class InsightsController {
                         c == null ? null : c.getName(), i.getLimitCents()));
             }
             out.put("items", open);
+            out.put("ask", questions.findFirstByOrderByCreatedAtDesc().map(this::view).orElse(null));
             return out;
         });
+    }
+
+    /**
+     * A question and, once Claude answers, its lines and the transactions it named with the
+     * app's own total of them, so the number doesn't rest on Claude's arithmetic.
+     */
+    public record QuestionView(Long id, String question, String status, String verdict, List<String> lines,
+            String error, Instant askedAt, List<Cited> rows, Long totalCents) {
+    }
+
+    public record Cited(Long id, LocalDate day, String description, long amountCents, String categoryName) {
+    }
+
+    QuestionView view(Question q) {
+        boolean abandoned = ask.abandoned(q);
+        String status = abandoned ? Question.FAILED : q.getStatus();
+        String error = abandoned ? "The app restarted before Claude answered. Ask again." : q.getError();
+        List<Cited> rows = new ArrayList<>();
+        if (q.getTransactionIds() != null && !q.getTransactionIds().isBlank()) {
+            for (String id : q.getTransactionIds().split(",")) {
+                txns.findById(Long.valueOf(id)).filter(t -> !t.getAccount().isHidden()).ifPresent(t -> rows.add(new Cited(
+                        t.getId(), t.getDay(), t.getDescription(), t.getAmountCents(),
+                        t.getCategory() == null ? null : t.getCategory().getName())));
+            }
+        }
+        rows.sort((a, b) -> b.day().compareTo(a.day()));
+        Long total = rows.size() > 1 ? rows.stream().mapToLong(Cited::amountCents).sum() : null;
+        List<String> lines = q.getLines() == null || q.getLines().isBlank() ? List.of() : List.of(q.getLines().split("\n"));
+        return new QuestionView(q.getId(), q.getText(), status, q.getVerdict(), lines, error, q.getCreatedAt(), rows, total);
     }
 
     /** A month's review, for History. */
@@ -119,6 +157,9 @@ public class InsightsController {
     /** Asks Claude for a fresh take now. Takes a little while: it's a real run. */
     @PostMapping("/refresh")
     public Map<String, Object> refresh() {
+        if (claude.busy()) {
+            throw new ClaudeCode.Problem("Claude is already working on something. Try again in a minute.");
+        }
         insights.refresh();
         return overview();
     }
@@ -126,9 +167,16 @@ public class InsightsController {
     public record AskBody(@NotBlank @Size(max = 300) String question) {
     }
 
-    @PostMapping("/afford")
-    public Insights.Answer afford(@RequestBody @Valid AskBody body) {
-        return insights.afford(body.question().trim());
+    /** Starts answering and returns at once; the page checks back on the question. */
+    @PostMapping("/ask")
+    public QuestionView ask(@RequestBody @Valid AskBody body) {
+        Question q = ask.start(body.question().trim());
+        return tx.execute(s -> view(q));
+    }
+
+    @GetMapping("/questions/{id}")
+    public QuestionView question(@PathVariable Long id) {
+        return tx.execute(s -> view(questions.findById(id).orElseThrow()));
     }
 
     /** Done (you applied it) or dismissed (not useful); either way it leaves the list. */

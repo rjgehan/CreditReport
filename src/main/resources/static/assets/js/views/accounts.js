@@ -118,7 +118,7 @@ export async function render(params, app) {
         icon('chevron', 18)),
       h('a', { class: 'row tap', href: '#/claude' },
         h('div', { class: 'main' }, h('div', { class: 'title' }, 'Claude'),
-          h('div', { class: 'meta' }, 'Ask Claude about your spending. It never sees balances')),
+          h('div', { class: 'meta' }, 'Daily notes on your spending, on your Claude subscription')),
         icon('chevron', 18)),
       h('a', { class: 'row tap', href: '#/shortcut' },
         h('div', { class: 'main' }, h('div', { class: 'title' }, 'iPhone shortcut'),

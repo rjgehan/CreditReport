@@ -66,19 +66,15 @@ On the iPhone, with Tailscale connected, open that address in Safari, sign in on
 
 ## 5. Claude
 
-Claude answers questions about your money on your own Claude subscription, like the stocks app's
-connector. It reads transactions and what the app works out from them; it never sees balances, net
-worth or investments, and it can't change anything. On the tunnel's hostname only Claude's parts
-answer (`/mcp`, its sign-in and the consent page); the app itself stays on Tailscale.
+Claude reads your transactions each morning and writes a short take on Home ("on track", "dining is
+up"), files the transactions your rules missed, flags odd charges, and suggests rules and targets
+for you to approve. On demand it answers "Can I afford it?". It runs Claude Code inside the app on
+your own Claude subscription, like the stocks app's trader: no API key, and it never sees balances.
 
-1. Cloudflare Zero Trust, **Networks, Tunnels, Create a tunnel, Cloudflared**, name it `finance`
-   and copy its token. On its **Public hostname** tab add `finance.<your-domain>`, type **HTTP**,
-   URL `finance:8080`.
-2. In the CasaOS app, set `TUNNEL_TOKEN` (the `cloudflared` service) to that token.
-3. claude.ai, **Customize, Connectors, Add custom connector**: name `Finance`, URL
-   `https://finance.<your-domain>/mcp`. If asked how to register, pick **Register automatically**.
-   Click **Connect**, sign in, tap **Allow**. It's then in the iPhone and desktop apps and Claude
-   Code too. **Accounts, More, Claude** shows it and disconnects it.
+1. On your computer, run `claude setup-token` and sign in. It prints a long token.
+2. In the app, **Accounts, More, Claude**: paste it and tap **Connect**.
+
+It runs every morning at 7 (`INSIGHTS_CRON` to change it); **Refresh** on the Home card runs it now.
 
 ## Backups
 

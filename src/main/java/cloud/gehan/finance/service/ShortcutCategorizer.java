@@ -178,7 +178,7 @@ public class ShortcutCategorizer {
         return leftovers().size();
     }
 
-    List<Transaction> leftovers() {
+    public List<Transaction> leftovers() {
         LocalDate today = LocalDate.now(zone);
         LocalDate from = today.minusDays(LOOKBACK_DAYS);
         // Give a transfer's other half time to post before guessing: once paired it isn't a leftover.
@@ -201,7 +201,7 @@ public class ShortcutCategorizer {
     }
 
     /** What the model may choose: spending and income categories, minus the catch-alls. */
-    List<Category> choices() {
+    public List<Category> choices() {
         return categories.findAllByOrderBySortOrderAscNameAsc().stream()
                 .filter(c -> c.getKind() == CategoryKind.EXPENSE || c.getKind() == CategoryKind.INCOME)
                 .filter(c -> !c.hasRole(CategoryRole.UNCATEGORIZED))

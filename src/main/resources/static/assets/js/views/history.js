@@ -15,18 +15,26 @@ export async function render(params, app) {
   ]);
   // The recap defaults to the latest finished month that had any activity.
   const recapMonth = params.get('month') || months.find((m) => !m.current)?.month || shiftMonth(thisMonth(), -1);
-  const recap = await get('/api/history/recap?month=' + recapMonth);
+  const [recap, review] = await Promise.all([get('/api/history/recap?month=' + recapMonth),
+    get('/api/insights/month?month=' + recapMonth).catch(() => ({ note: null }))]);
   const go = (changes) => {
     const p = new URLSearchParams({ month: recapMonth, cal: calMonth, view: calView, ...changes });
     app.go('#/history?' + p);
   };
 
   return h('div', { class: 'grid two' },
-    h('div', { class: 'home-col' }, recapCard(recap), calendarCard(months, calendar, calMonth, calView, go)),
+    h('div', { class: 'home-col' }, recapCard(recap), claudeNote(review.note), calendarCard(months, calendar, calMonth, calView, go)),
     h('div', { class: 'home-col' }, monthList(months, recapMonth, go)));
 }
 
 // --- Recap ---------------------------------------------------------------------------
+
+/** Claude's review of the month, written at the start of the next one. */
+function claudeNote(n) {
+  if (!n || !n.lines.length) return null;
+  return h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'Claude')),
+    h('ul', { class: 'claude-lines' }, n.lines.map((l) => h('li', null, l))));
+}
 
 function recapCard(r) {
   const s = r.score;

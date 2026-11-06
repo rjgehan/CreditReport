@@ -208,7 +208,7 @@ public class AssistantTools {
 
     // --- Transactions -------------------------------------------------------------------
 
-    record Row(LocalDate date, String description, String merchant, BigDecimal amount, String category,
+    record Row(Long id, LocalDate date, String description, String merchant, BigDecimal amount, String category,
             String account, String note, Boolean oneOff, Boolean pending) {
     }
 
@@ -297,7 +297,7 @@ public class AssistantTools {
     private static Row row(Transaction t) {
         Category c = t.getCategory();
         String merchant = t.getMerchant() == null || t.getMerchant().equalsIgnoreCase(t.getDescription()) ? null : t.getMerchant();
-        return new Row(t.getDay(), t.getDescription(), merchant, usd(t.getAmountCents()),
+        return new Row(t.getId(), t.getDay(), t.getDescription(), merchant, usd(t.getAmountCents()),
                 c == null ? "Uncategorized" : c.getName(), t.getAccount().getName(),
                 t.getNotes() == null || t.getNotes().isBlank() ? null : t.getNotes(),
                 t.isOneOff() ? true : null, t.isPending() ? true : null);

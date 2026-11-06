@@ -94,4 +94,19 @@ public final class EnumColumns {
     public static class TradeSources extends ByName<TradeSource> {
         public TradeSources() { super(TradeSource.class); }
     }
+
+    @Converter(autoApply = true)
+    public static class InsightKinds extends ByName<Insight.Kind> {
+        public InsightKinds() { super(Insight.Kind.class); }
+    }
+
+    @Converter(autoApply = true)
+    public static class InsightItemKinds extends ByName<InsightItem.Kind> {
+        public InsightItemKinds() { super(InsightItem.Kind.class); }
+    }
+
+    @Converter(autoApply = true)
+    public static class InsightItemStates extends ByName<InsightItem.State> {
+        public InsightItemStates() { super(InsightItem.State.class); }
+    }
 }

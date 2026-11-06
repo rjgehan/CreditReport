@@ -13,6 +13,18 @@ RUN mvn -B -q clean package -DskipTests \
 WORKDIR /build/target
 RUN java -Djarmode=tools -jar app.jar extract --layers --destination extracted
 
+# --- Claude Code -------------------------------------------------------------
+# Claude's notes run Claude Code in print mode on your Claude subscription, as the
+# stocks app's trader does. Same pinned version. The npm package's postinstall puts
+# the platform's native binary in place, so the runtime image needs no Node.
+# Never install with --omit=optional or --ignore-scripts: both leave a placeholder.
+FROM node:22.23.2-bookworm-slim AS claude
+ARG CLAUDE_CODE_VERSION=2.1.285
+RUN npm install -g --no-audit --no-fund "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+ && npm cache clean --force \
+ && test "$(stat -c %s "$(readlink -f "$(command -v claude)")")" -gt 1000000 \
+ && cp -rL /usr/local/lib/node_modules/@anthropic-ai/claude-code /opt/claude-code
+
 # --- Runtime ------------------------------------------------------------------
 FROM eclipse-temurin:21-jre-noble
 
@@ -31,6 +43,8 @@ COPY --from=build /build/target/extracted/dependencies/ ./
 COPY --from=build /build/target/extracted/spring-boot-loader/ ./
 COPY --from=build /build/target/extracted/snapshot-dependencies/ ./
 COPY --from=build /build/target/extracted/application/ ./
+COPY --from=claude /opt/claude-code /opt/claude-code
+RUN ln -s /opt/claude-code/bin/claude.exe /usr/local/bin/claude
 
 # finance.db, the generated encryption key and the Teller certificate live here.
 RUN mkdir -p /data && chown -R app:app /data /app

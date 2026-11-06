@@ -1,39 +1,66 @@
-// Connecting Claude: what's connected, and how to add it. Claude signs in the way
-// it does with any connector (like the stocks app's); there's no key to paste.
+// Setting up Claude's notes: Claude Code on the server, signed in with a token from
+// your Claude subscription (no API key), the way the stocks app's trader runs.
 
-import { get, del } from '../api.js';
-import { h, toast, confirmSheet, copyText } from '../ui.js';
+import { get, put, del } from '../api.js';
+import { h, toast, busy, confirmSheet, copyText } from '../ui.js';
 import { ago } from '../fmt.js';
 
 export async function render(params, app) {
-  const s = await get('/api/claude');
-  const url = s.publicUrl || 'https://finance.<your-domain>/mcp';
+  const [s, mcp] = await Promise.all([get('/api/insights'), get('/api/claude')]);
+  const copy = async (text) => toast((await copyText(text)) ? 'Copied' : 'Press and hold to copy it instead');
 
-  const list = h('section', { class: 'card flush' });
-  if (!s.connections.length) {
-    list.append(h('div', { class: 'row' }, h('div', { class: 'main' },
-      h('div', { class: 'title' }, 'Not connected yet'),
-      h('div', { class: 'meta' }, 'In claude.ai: Customize, Connectors, Add custom connector, then Connect and Allow.'))));
-  }
-  for (const c of s.connections) {
-    list.append(h('div', { class: 'row' },
-      h('div', { class: 'main' }, h('div', { class: 'title' }, c.name),
-        h('div', { class: 'meta' }, c.lastUsedAt ? `Last looked ${ago(c.lastUsedAt)}` : `Connected ${ago(c.connectedAt)}`)),
-      h('button', { class: 'btn small danger', onclick: async () => {
-        if (!(await confirmSheet(`Disconnect ${c.name}?`, 'It stops reading your data on its next question.', 'Disconnect'))) return;
-        await del(`/api/claude/connections/${c.id}`);
-        toast('Disconnected');
+  const intro = h('section', { class: 'card' },
+    h('div', { class: 'title', style: { fontWeight: 600 } }, 'Claude, on your Claude subscription'),
+    h('p', { class: 'hint', style: { margin: '6px 0 0' } },
+      'Each morning Claude writes a short take on Home, files transactions your rules missed, flags odd charges and '
+      + 'suggests rules and targets for you to approve. It sees transactions and what the app works out from them, '
+      + 'never balances. No API key: it uses your Claude plan.'));
+
+  let setup;
+  if (s.configured) {
+    const remove = h('button', { class: 'btn small danger' }, 'Turn off');
+    remove.addEventListener('click', busy(remove, async () => {
+      if (!(await confirmSheet('Turn off Claude?', 'The token is deleted from the server. Notes already written stay.', 'Turn off'))) return;
+      await del('/api/insights/token');
+      app.rerender();
+    }));
+    setup = h('section', { class: 'card flush' }, h('div', { class: 'row' },
+      h('div', { class: 'main' }, h('div', { class: 'title' }, 'Signed in'),
+        h('div', { class: 'meta' }, s.lastRunAt ? `Last ran ${ago(s.lastRunAt)}` : 'Runs every morning at 7')),
+      remove));
+  } else {
+    const token = h('input', { class: 'field', type: 'password', placeholder: 'sk-ant-oat…', autocomplete: 'off',
+      autocapitalize: 'off', spellcheck: 'false', 'aria-label': 'Claude Code token' });
+    const save = h('button', { class: 'btn primary' }, 'Connect');
+    save.addEventListener('click', busy(save, async () => {
+      if (!token.value.trim()) return token.focus();
+      save.textContent = 'Checking…';
+      try {
+        await put('/api/insights/token', { token: token.value.trim() });
+        token.value = '';
+        toast('Claude is connected');
         app.rerender();
-      } }, 'Disconnect')));
+      } finally {
+        save.textContent = 'Connect';
+      }
+    }));
+    setup = h('section', { class: 'card form' },
+      h('div', { class: 'stack' }, h('span', { class: 'label-text' }, '1. On your computer, run'),
+        h('code', { class: 'copyable', title: 'Tap to copy', onclick: () => copy('claude setup-token') }, 'claude setup-token'),
+        h('span', { class: 'hint' }, 'It signs in to your Claude account and prints a long token.')),
+      h('label', { class: 'stack' }, '2. Paste the token', token),
+      h('div', { class: 'btn-row' }, save));
   }
 
-  return h('div', { class: 'grid' },
-    h('section', { class: 'card' },
-      h('div', { class: 'title', style: { fontWeight: 600 } }, 'Ask Claude about your money'),
-      h('p', { class: 'hint', style: { margin: '6px 0 10px' } },
-        'Claude reads your transactions and what the app works out from them. It can\'t see balances, net worth or '
-        + 'investments, and it can\'t change anything. Connector address:'),
-      h('code', { class: 'copyable', title: 'Tap to copy',
-        onclick: async () => toast((await copyText(url)) ? 'Copied address' : 'Press and hold to copy it instead') }, url)),
-    list);
+  // Apps that read the app themselves over MCP (claude.ai connectors), if any were ever connected.
+  const apps = mcp.connections.length ? h('section', { class: 'card flush' },
+    mcp.connections.map((c) => h('div', { class: 'row' },
+      h('div', { class: 'main' }, h('div', { class: 'title' }, c.name),
+        h('div', { class: 'meta' }, c.lastUsedAt ? `Connector, last looked ${ago(c.lastUsedAt)}` : 'Connector')),
+      h('button', { class: 'btn small danger', onclick: async () => {
+        await del(`/api/claude/connections/${c.id}`);
+        app.rerender();
+      } }, 'Disconnect')))) : null;
+
+  return h('div', { class: 'grid' }, intro, setup, apps);
 }

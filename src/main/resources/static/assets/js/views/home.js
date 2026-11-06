@@ -7,11 +7,13 @@ import { h, toast, busy, icon } from '../ui.js';
 import { money, pct, monthLabel, ago, shortDate, privacy, parseDay, depositLine, filedLine } from '../fmt.js';
 import { meter } from '../charts.js';
 import { forecastCard } from './forecast.js';
+import { insightCard } from './insights.js';
 
 const MAX_TARGETS = 6;
 
 export async function render(params, app) {
-  const [d, f] = await Promise.all([get('/api/summary'), get('/api/forecast')]);
+  const [d, f, claude] = await Promise.all([get('/api/summary'), get('/api/forecast'),
+    get('/api/insights').catch(() => null)]);
 
   if (!d.hasAccounts) {
     return h('div', { class: 'card empty' },
@@ -21,7 +23,8 @@ export async function render(params, app) {
 
   // With no income on record the month card can't say much, so help find the paycheck first.
   const setup = d.plan.incomeCents === 0 ? await incomeSetup(app) : null;
-  const left = h('div', { class: 'home-col' }, netWorth(d), setup, f.status === 'unknown' ? null : forecastCard(f), dueCards(d));
+  const left = h('div', { class: 'home-col' }, netWorth(d), setup, insightCard(claude, app),
+    f.status === 'unknown' ? null : forecastCard(f), dueCards(d));
   const right = h('div', { class: 'home-col' }, targets(d), goals(d));
   return h('div', { class: 'grid two' }, left, right);
 }

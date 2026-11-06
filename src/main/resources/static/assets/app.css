@@ -667,3 +667,17 @@ ol.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
 .step-body { min-width: 0; display: grid; gap: 4px; }
 .step-body .title { font-weight: 600; }
 code.copyable { font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--sunken); padding: 8px 10px; border-radius: 8px; overflow-wrap: anywhere; cursor: pointer; }
+
+/* --- Claude ------------------------------------------------------------------- */
+
+.label-text { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+div.stack { display: grid; gap: 6px; justify-items: start; }
+.claude-head { display: flex; align-items: baseline; gap: 8px; }
+.claude-head .pill { flex: none; }
+.claude-headline { font-weight: 600; font-size: 16px; line-height: 1.35; }
+.claude-lines { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; color: var(--ink-2); font-size: 15px; line-height: 1.4; }
+.claude-more { display: block; margin-top: 10px; font-size: 14px; }
+.claude-ask { display: flex; gap: 8px; }
+.claude-ask .field { flex: 1; }
+.claude-answer { display: flex; gap: 8px; align-items: baseline; margin-top: 12px; line-height: 1.4; }
+.claude-answer .pill { flex: none; }

@@ -1,14 +1,10 @@
-# Finance on CasaOS, reachable over Tailscale.
+# Finance on CasaOS, reachable only over Tailscale.
 #
-# The container listens on 127.0.0.1 only, so nothing on your LAN can reach it.
-# Tailscale on the server publishes it to your tailnet with a real HTTPS
-# certificate:
+# The container listens on 127.0.0.1 only, so nothing on your LAN or the
+# internet can reach it. Tailscale on the server publishes it to your tailnet
+# with a real HTTPS certificate:
 #
 #   https://<server-name>.<your-tailnet>.ts.net
-#
-# The Cloudflare Tunnel sidecar (like the stocks app's) is what Claude connects
-# through. On that hostname only Claude's parts answer: /mcp, its sign-in and the
-# consent page. The app and your balances stay on Tailscale.
 #
 # Full walkthrough: DEPLOY.md in the repository. In short, before importing:
 #
@@ -27,6 +23,7 @@ services:
     image: ghcr.io/rjgehan/creditreport:latest
     container_name: finance
     restart: unless-stopped
+    network_mode: bridge
     deploy:
       resources:
         limits:
@@ -51,8 +48,6 @@ services:
       - APP_DEMO_DATA=false
       - APP_DATA_DIR=/data
       - TZ=America/New_York
-      # Optional: the tunnel hostname, so the Claude screen shows the address to add.
-      # - APP_PUBLIC_URL=https://finance.<your-domain>
     volumes:
       - type: bind
         source: /DATA/AppData/finance
@@ -89,29 +84,6 @@ services:
           description:
             en_us: finance.db and the logo cache. Must be owned by UID 10001. Back it up.
 
-  cloudflared: # Cloudflare Tunnel sidecar (one tunnel per app). Public hostname -> HTTP finance:8080
-    image: cloudflare/cloudflared:latest
-    container_name: finance-cloudflared
-    restart: unless-stopped
-    command: tunnel --no-autoupdate run
-    environment:
-      # CHANGE ME. Zero Trust -> Networks -> Tunnels -> the finance tunnel's token.
-      - TUNNEL_TOKEN=CHANGE_ME
-    security_opt:
-      - no-new-privileges:true
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-    labels: # Watchtower: keep the tunnel client current
-      com.centurylinklabs.watchtower.enable: "true"
-    x-casaos:
-      envs:
-        - container: TUNNEL_TOKEN
-          description:
-            en_us: Token of this app's Cloudflare Tunnel. Route finance.<domain> to HTTP finance:8080.
-
 x-casaos:
   architectures:
     - amd64
@@ -128,8 +100,7 @@ x-casaos:
     en_us: >-
       Self-hosted personal finance: bank and card syncing through SimpleFIN,
       investments priced from holdings, a cash-flow Sankey, spending targets,
-      savings goals and a monthly score. Reachable over Tailscale; Claude
-      connects through a Cloudflare Tunnel and never sees balances.
+      savings goals and a monthly score. Reachable only over Tailscale.
   icon: https://raw.githubusercontent.com/rjgehan/CreditReport/main/src/main/resources/static/icons/apple-touch-icon.png
   scheme: https
   index: /

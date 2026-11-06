@@ -73,8 +73,9 @@ answer (`/mcp`, its sign-in and the consent page); the app itself stays on Tails
 
 1. Cloudflare Zero Trust, **Networks, Tunnels, Create a tunnel, Cloudflared**, name it `finance`
    and copy its token. On its **Public hostname** tab add `finance.<your-domain>`, type **HTTP**,
-   URL `finance:8080`.
-2. In the CasaOS app, set `TUNNEL_TOKEN` (the `cloudflared` service) to that token.
+   URL `localhost:8095`.
+2. CasaOS, **+, Custom Install, Import**: paste `deploy/casaos/finance-tunnel.yml` with that token
+   in `TUNNEL_TOKEN`. The finance app itself doesn't change.
 3. claude.ai, **Customize, Connectors, Add custom connector**: name `Finance`, URL
    `https://finance.<your-domain>/mcp`. If asked how to register, pick **Register automatically**.
    Click **Connect**, sign in, tap **Allow**. It's then in the iPhone and desktop apps and Claude

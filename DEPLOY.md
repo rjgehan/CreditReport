@@ -64,44 +64,21 @@ On the iPhone, with Tailscale connected, open that address in Safari, sign in on
   on PCS, add a recurring contribution from your latest statement.
 - **Anything else:** download a QFX/OFX or CSV from the bank and use **Import statement**.
 
-## 5. Claude (optional)
+## 5. Claude
 
-Claude can answer questions about your money from your own Claude subscription: no API key. It
-connects to the app's MCP server (`/mcp`) and signs in the way it does with any connector, and you
-approve it on a consent screen behind your normal sign-in. It reads transactions and what the app
-works out from them; it never sees balances, net worth or investments, and it can't change anything.
-**Accounts, More, Claude** lists what's connected and disconnects it.
+Claude answers questions about your money on your own Claude subscription, like the stocks app's
+connector. It reads transactions and what the app works out from them; it never sees balances, net
+worth or investments, and it can't change anything. On the tunnel's hostname only Claude's parts
+answer (`/mcp`, its sign-in and the consent page); the app itself stays on Tailscale.
 
-**Claude Code only, nothing public.** On a computer on your tailnet:
-
-```sh
-claude mcp add --transport http --scope user finance https://<server-name>.<your-tailnet>.ts.net/mcp
-```
-
-then `/mcp` in Claude Code, pick `finance` and sign in.
-
-**Claude everywhere (claude.ai, the iPhone and desktop apps).** Anthropic's servers make the
-calls, so a few paths need a public address. This uses a Cloudflare Tunnel, like the stocks app:
-
-1. On the finance app (CasaOS, its settings), set `APP_URL` to the address you open it at over
-   Tailscale and `APP_PUBLIC_URL` to the public one, e.g. `https://finance.<your-domain>`.
-2. Cloudflare Zero Trust, **Networks, Tunnels, Create a tunnel, Cloudflared**, name it `finance`
-   and copy its token. Import `deploy/casaos/finance-tunnel.yml` in CasaOS with that token.
-3. On the tunnel's **Public hostname** tab add `finance.<your-domain>`, type **HTTP**, URL
-   `127.0.0.1:8095`, and **Path**:
-
-   ```
-   ^/(mcp|oauth2/(register|token)|\.well-known/oauth-(protected-resource|authorization-server)(/mcp)?)$
-   ```
-
-   Anything else on that hostname gets the tunnel's 404: the app, its sign-in and the consent
-   screen stay on Tailscale.
-4. For that hostname: no challenge or Bot Fight Mode, and caching bypassed. To lock it to Anthropic,
-   add a WAF custom rule that blocks requests to it unless the source IP is in `160.79.104.0/21`.
-5. claude.ai, **Customize, Connectors, Add custom connector**: name `Finance`, URL
-   `https://finance.<your-domain>/mcp`. If asked how to register, pick **Register automatically**;
-   leave request headers empty. Click **Connect**, tap **Allow** in the page that opens (you need to
-   be on Tailscale for this), and turn Finance on in a chat under **+, Connectors**.
+1. Cloudflare Zero Trust, **Networks, Tunnels, Create a tunnel, Cloudflared**, name it `finance`
+   and copy its token. On its **Public hostname** tab add `finance.<your-domain>`, type **HTTP**,
+   URL `finance:8080`.
+2. In the CasaOS app, set `TUNNEL_TOKEN` (the `cloudflared` service) to that token.
+3. claude.ai, **Customize, Connectors, Add custom connector**: name `Finance`, URL
+   `https://finance.<your-domain>/mcp`. If asked how to register, pick **Register automatically**.
+   Click **Connect**, sign in, tap **Allow**. It's then in the iPhone and desktop apps and Claude
+   Code too. **Accounts, More, Claude** shows it and disconnects it.
 
 ## Backups
 

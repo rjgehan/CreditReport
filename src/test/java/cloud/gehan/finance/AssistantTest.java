@@ -171,6 +171,29 @@ class AssistantTest {
     }
 
     @Test
+    void onTheTunnelOnlyClaudesPartsAnswer() throws Exception {
+        org.springframework.test.web.servlet.request.RequestPostProcessor tunnel = r -> {
+            r.setServerName("finance.example.com");
+            r.setScheme("https");
+            r.setServerPort(443);
+            return r;
+        };
+        mvc.perform(get("/api/accounts").with(tunnel).with(user("me"))).andExpect(status().isNotFound());
+        mvc.perform(get("/").with(tunnel)).andExpect(status().isNotFound());
+        mvc.perform(get("/index.html").with(tunnel)).andExpect(status().isNotFound());
+        JsonNode server = body(mvc.perform(get("/.well-known/oauth-authorization-server").with(tunnel))
+                .andExpect(status().isOk()).andReturn().getResponse());
+        assertThat(server.get("issuer").asText()).isEqualTo("https://finance.example.com");
+        assertThat(server.get("authorization_endpoint").asText()).isEqualTo("https://finance.example.com/oauth2/authorize");
+        mvc.perform(post("/mcp").with(tunnel).contentType(MediaType.APPLICATION_JSON).content(rpc(1, "ping", "{}")))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get("/login.html").with(tunnel)).andExpect(status().isOk());
+        // The Tailscale address has everything.
+        mvc.perform(get("/api/claude").with(r -> { r.setServerName("homeserver.example.ts.net"); return r; })
+                .with(user("me"))).andExpect(status().isOk());
+    }
+
+    @Test
     void noToolGivesAwayABalance() throws Exception {
         long savings = call(post("/api/accounts").with(user("me")).with(csrf()),
                 "{\"name\":\"Rainy day\",\"type\":\"SAVINGS\",\"balanceCents\":9876543}").get("id").asLong();

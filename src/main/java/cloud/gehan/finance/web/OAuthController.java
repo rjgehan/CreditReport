@@ -22,7 +22,6 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
-import cloud.gehan.finance.config.AppProperties;
 import cloud.gehan.finance.model.ClaudeClient;
 import cloud.gehan.finance.service.assistant.ClaudeOAuth;
 import cloud.gehan.finance.service.assistant.ClaudeOAuth.Refused;
@@ -37,14 +36,12 @@ import jakarta.servlet.http.HttpServletRequest;
 public class OAuthController {
 
     private final ClaudeOAuth oauth;
-    private final AppProperties props;
 
-    public OAuthController(ClaudeOAuth oauth, AppProperties props) {
+    public OAuthController(ClaudeOAuth oauth) {
         this.oauth = oauth;
-        this.props = props;
     }
 
-    /** Where this request came in: the public address for Anthropic, the tailnet one for you. */
+    /** Where this request came in: the tunnel's public address, or the tailnet one. */
     static String origin(HttpServletRequest request) {
         String host = request.getServerName();
         boolean local = host.equals("localhost") || host.equals("127.0.0.1") || host.equals("[::1]");
@@ -53,12 +50,6 @@ public class OAuthController {
         int port = request.getServerPort();
         boolean defaultPort = port <= 0 || (scheme.equals("https") ? port == 443 || port == 80 : port == 80);
         return scheme + "://" + host + (defaultPort ? "" : ":" + port);
-    }
-
-    /** Where your browser goes to approve Claude: always the address you sign in at. */
-    private String signInOrigin(HttpServletRequest request) {
-        String url = props.url();
-        return url == null || url.isBlank() ? origin(request) : url.replaceAll("/+$", "");
     }
 
     // --- Discovery (RFC 9728, RFC 8414) -------------------------------------------------
@@ -80,7 +71,7 @@ public class OAuthController {
         String origin = origin(request);
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("issuer", origin);
-        m.put("authorization_endpoint", signInOrigin(request) + "/oauth2/authorize");
+        m.put("authorization_endpoint", origin + "/oauth2/authorize");
         m.put("token_endpoint", origin + "/oauth2/token");
         m.put("registration_endpoint", origin + "/oauth2/register");
         m.put("response_types_supported", List.of("code"));

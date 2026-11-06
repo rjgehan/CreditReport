@@ -15,7 +15,6 @@ public record AppProperties(
         boolean demoData,
         String zone,
         boolean secureCookies,
-        String url,
         String publicUrl) {
 
     public ZoneId zoneId() {
